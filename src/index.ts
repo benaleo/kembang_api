@@ -4,21 +4,16 @@ import { cors } from 'hono/cors';
 import { createClient } from '@supabase/supabase-js';
 import products from './routes/products';
 import carts from './routes/carts';
-
-type Bindings = {
-  SUPABASE_URL: string;
-  SUPABASE_SERVICE_ROLE_KEY: string;
-};
-
-type Variables = {
-  supabase: ReturnType<typeof createClient>;
-};
+import addresses from './routes/addresses';
+import myProfile from './routes/my-profile';
+import { requireAuth } from './middleware/auth';
+import { Bindings, Variables } from './types';
 
 const app = new OpenAPIHono<{ Bindings: Bindings; Variables: Variables }>();
 
 app.use('*', cors({
   origin: ['http://localhost:4321', 'http://127.0.0.1:4321'],
-  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization'],
   credentials: true
 }));
@@ -30,6 +25,9 @@ app.use('*', async (c, next) => {
   c.set('supabase', supabase);
   await next();
 });
+
+app.use('/api/v1/addresses/*', requireAuth);
+app.use('/api/v1/my-profile/*', requireAuth);
 
 const healthRoute = createRoute({
   method: 'get',
@@ -103,6 +101,8 @@ app.route('/orders', orders);
 app.route('/deliveries', deliveries);
 app.route('/api/v1/products', products);
 app.route('/api/v1/carts', carts);
+app.route('/api/v1/addresses', addresses);
+app.route('/api/v1/my-profile', myProfile);
 
 app.doc('/openapi.json', {
   openapi: '3.0.0',
