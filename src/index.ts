@@ -1,0 +1,114 @@
+import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
+import { swaggerUI } from '@hono/swagger-ui';
+import { cors } from 'hono/cors';
+import { createClient } from '@supabase/supabase-js';
+import products from './routes/products';
+import carts from './routes/carts';
+
+type Bindings = {
+  SUPABASE_URL: string;
+  SUPABASE_SERVICE_ROLE_KEY: string;
+};
+
+type Variables = {
+  supabase: ReturnType<typeof createClient>;
+};
+
+const app = new OpenAPIHono<{ Bindings: Bindings; Variables: Variables }>();
+
+app.use('*', cors({
+  origin: ['http://localhost:4321', 'http://127.0.0.1:4321'],
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+}));
+
+app.use('*', async (c, next) => {
+  const supabase = createClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false },
+  });
+  c.set('supabase', supabase);
+  await next();
+});
+
+const healthRoute = createRoute({
+  method: 'get',
+  path: '/health',
+  tags: ['Health'],
+  responses: {
+    200: {
+      description: 'Service is up',
+      content: { 'application/json': { schema: z.object({ status: z.literal('ok') }) } },
+    },
+  },
+});
+
+app.openapi(healthRoute, (c) => c.json({ status: 'ok' as const }));
+
+const orders = new OpenAPIHono<{ Bindings: Bindings; Variables: Variables }>();
+
+orders.openapi(
+  createRoute({
+    method: 'get',
+    path: '/',
+    tags: ['Orders'],
+    responses: {
+      200: {
+        description: 'List orders',
+        content: { 'application/json': { schema: z.object({ message: z.string() }) } },
+      },
+    },
+  }),
+  (c) => c.json({ message: 'TODO: GET /orders' }),
+);
+
+orders.openapi(
+  createRoute({
+    method: 'post',
+    path: '/',
+    tags: ['Orders'],
+    request: {
+      body: {
+        content: { 'application/json': { schema: z.object({}).passthrough() } },
+      },
+    },
+    responses: {
+      201: {
+        description: 'Order created',
+        content: { 'application/json': { schema: z.object({ message: z.string() }) } },
+      },
+    },
+  }),
+  (c) => c.json({ message: 'TODO: POST /orders' }, 201),
+);
+
+const deliveries = new OpenAPIHono<{ Bindings: Bindings; Variables: Variables }>();
+
+deliveries.openapi(
+  createRoute({
+    method: 'get',
+    path: '/',
+    tags: ['Deliveries'],
+    responses: {
+      200: {
+        description: 'List deliveries',
+        content: { 'application/json': { schema: z.object({ message: z.string() }) } },
+      },
+    },
+  }),
+  (c) => c.json({ message: 'TODO: GET /deliveries' }),
+);
+
+app.route('/orders', orders);
+app.route('/deliveries', deliveries);
+app.route('/api/v1/products', products);
+app.route('/api/v1/carts', carts);
+
+app.doc('/openapi.json', {
+  openapi: '3.0.0',
+  info: { title: 'Kembang API', version: '0.0.1' },
+});
+
+app.get('/docs', swaggerUI({ url: '/openapi.json' }));
+
+export default app;
