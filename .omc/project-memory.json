@@ -1,0 +1,111 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1786210041225,
+  "projectRoot": "/Users/bens/Documents/claude/kembang/kembang_api",
+  "techStack": {
+    "languages": [
+      {
+        "name": "JavaScript/TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "package.json"
+        ]
+      },
+      {
+        "name": "TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "tsconfig.json"
+        ]
+      }
+    ],
+    "frameworks": [],
+    "packageManager": "npm",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": null,
+    "testCommand": null,
+    "lintCommand": null,
+    "devCommand": "npm run dev",
+    "scripts": {
+      "dev": "wrangler dev",
+      "deploy": "wrangler deploy",
+      "cf-typegen": "wrangler types"
+    }
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": "ES modules",
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "public",
+      "src"
+    ],
+    "gitBranches": null
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "public": {
+      "path": "public",
+      "purpose": "Public files",
+      "fileCount": 1,
+      "lastAccessed": 1786210041212,
+      "keyFiles": [
+        "default.webp"
+      ]
+    },
+    "src": {
+      "path": "src",
+      "purpose": "Source code",
+      "fileCount": 2,
+      "lastAccessed": 1786210041213,
+      "keyFiles": [
+        "index.ts",
+        "types.ts"
+      ]
+    },
+    "src/middleware": {
+      "path": "src/middleware",
+      "purpose": "Middleware",
+      "fileCount": 1,
+      "lastAccessed": 1786210041217,
+      "keyFiles": [
+        "auth.ts"
+      ]
+    },
+    "src/routes": {
+      "path": "src/routes",
+      "purpose": "Route handlers",
+      "fileCount": 5,
+      "lastAccessed": 1786210041217,
+      "keyFiles": [
+        "addresses.ts",
+        "admin-addresses.ts",
+        "carts.ts"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "src/routes/admin-addresses.ts",
+      "accessCount": 2,
+      "lastAccessed": 1786210052712,
+      "type": "file"
+    },
+    {
+      "path": "src/middleware/auth.ts",
+      "accessCount": 1,
+      "lastAccessed": 1786286592318,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}
