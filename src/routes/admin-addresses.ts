@@ -10,6 +10,7 @@ const addressBodySchema = z.object({
   recipient_phone: z.string().nullable().optional(),
   recipient_address: z.string().nullable().optional(),
   recipient_address_detail: z.string().nullable().optional(),
+  place: z.string().nullable().optional(),
   recipient_geo: z.object({ lat: z.number(), lng: z.number() }).nullable().optional(),
   is_default: z.boolean().optional(),
 });
@@ -22,6 +23,7 @@ const addressSchema = z.object({
   label: z.string().nullable(),
   recipient_address: z.string().nullable(),
   recipient_address_detail: z.string().nullable(),
+  place: z.string().nullable(),
   recipient_phone: z.string().nullable(),
   recipient_name: z.string().nullable(),
   recipient_geo: z.any().nullable(),

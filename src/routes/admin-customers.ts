@@ -92,7 +92,35 @@ adminCustomers.openapi(
         return c.json({ error: error.message }, 500);
       }
 
-      return c.json({ data: data || [], total: count ?? 0 });
+      const customers = data || [];
+
+      // alamat & jarak yang ditampilkan diambil dari customer_addresses default (is_default=true).
+      // customer_addresses tidak punya FK ke customers, jadi merge manual per customer_id.
+      if (customers.length > 0) {
+        const ids = customers.map((row) => row.id);
+        const { data: addresses } = await supabase
+          .from('customer_addresses')
+          .select('customer_id, recipient_address, recipient_distances')
+          .in('customer_id', ids)
+          .eq('is_default', true);
+
+        const defaultByCustomer = new Map<number, { recipient_address: string | null; recipient_distances: number | null }>();
+        for (const addr of addresses || []) {
+          if (!defaultByCustomer.has(addr.customer_id)) {
+            defaultByCustomer.set(addr.customer_id, addr);
+          }
+        }
+
+        for (const row of customers) {
+          const def = defaultByCustomer.get(row.id);
+          if (def) {
+            row.address = def.recipient_address ?? row.address;
+            row.distance = def.recipient_distances ?? row.distance;
+          }
+        }
+      }
+
+      return c.json({ data: customers, total: count ?? 0 });
     } catch (err) {
       return c.json({ error: 'Internal server error' }, 500);
     }
