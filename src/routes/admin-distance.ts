@@ -11,7 +11,14 @@ adminDistance.openapi(
     tags: ['Admin Distance'],
     request: {
       body: {
-        content: { 'application/json': { schema: z.object({ destination: z.string() }) } },
+        content: {
+          'application/json': {
+            schema: z.object({
+              latitude: z.number().min(-90).max(90),
+              longitude: z.number().min(-180).max(180),
+            }),
+          },
+        },
       },
     },
     responses: {
@@ -30,13 +37,10 @@ adminDistance.openapi(
     },
   }),
   async (c) => {
-    const { destination } = c.req.valid('json');
-
-    if (!destination) {
-      return c.json({ error: 'destination is required' }, 400);
-    }
+    const { latitude, longitude } = c.req.valid('json');
 
     try {
+      const destination = `${latitude},${longitude}`;
       const distance = await getDistanceKm(c.env.GOMAPS_APIKEY, destination);
       return c.json({ distance });
     } catch (e) {
