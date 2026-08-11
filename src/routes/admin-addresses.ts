@@ -1,5 +1,6 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { Bindings, Variables } from '../types';
+import { getDistanceKm } from '../lib/gomaps';
 
 const adminAddresses = new OpenAPIHono<{ Bindings: Bindings; Variables: Variables }>();
 
@@ -110,9 +111,18 @@ adminAddresses.openapi(
         .eq('customer_id', customerId);
     }
 
+    let recipientDistances = 0;
+    if (body.recipient_address) {
+      try {
+        recipientDistances = await getDistanceKm(c.env.GOMAPS_APIKEY, body.recipient_address);
+      } catch (e) {
+        console.error('GoMaps distance failed:', e);
+      }
+    }
+
     const { data, error } = await supabase
       .from('customer_addresses')
-      .insert([{ ...body, user_id: null, customer_id: customerId, recipient_distances: 0, is_default: isDefault }])
+      .insert([{ ...body, user_id: null, customer_id: customerId, recipient_distances: recipientDistances, is_default: isDefault }])
       .select()
       .single();
 
@@ -183,9 +193,19 @@ adminAddresses.openapi(
         .neq('id', id);
     }
 
+    let updateBody: typeof body & { recipient_distances?: number } = body;
+    if (body.recipient_address) {
+      try {
+        const recipientDistances = await getDistanceKm(c.env.GOMAPS_APIKEY, body.recipient_address);
+        updateBody = { ...body, recipient_distances: recipientDistances };
+      } catch (e) {
+        console.error('GoMaps distance failed:', e);
+      }
+    }
+
     const { data, error } = await supabase
       .from('customer_addresses')
-      .update(body)
+      .update(updateBody)
       .eq('id', id)
       .select()
       .single();

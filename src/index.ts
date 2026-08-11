@@ -7,6 +7,7 @@ import carts from './routes/carts';
 import addresses from './routes/addresses';
 import adminAddresses from './routes/admin-addresses';
 import adminCustomers from './routes/admin-customers';
+import adminDistance from './routes/admin-distance';
 import myProfile from './routes/my-profile';
 import { requireAuth } from './middleware/auth';
 import { Bindings, Variables } from './types';
@@ -107,6 +108,7 @@ app.route('/api/v1/carts', carts);
 app.route('/api/v1/addresses', addresses);
 app.route('/api/v1/admin/customers/:customerId/addresses', adminAddresses);
 app.route('/api/v1/admin/customers', adminCustomers);
+app.route('/api/v1/admin/distance', adminDistance);
 app.route('/api/v1/my-profile', myProfile);
 
 app.doc('/openapi.json', {
