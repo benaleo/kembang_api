@@ -34,16 +34,30 @@ const customerSchema = z.object({
   updated_at: z.string(),
 });
 
+const listCustomersQuerySchema = z.object({
+  keyword: z.string().optional(),
+  isSubscribed: z.enum(['true', 'false']).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(10),
+});
+
 // List customers
 adminCustomers.openapi(
   createRoute({
     method: 'get',
     path: '/',
     tags: ['Admin Customers'],
+    request: {
+      query: listCustomersQuerySchema,
+    },
     responses: {
       200: {
         description: 'List customers',
-        content: { 'application/json': { schema: z.array(customerSchema) } },
+        content: {
+          'application/json': {
+            schema: z.object({ data: z.array(customerSchema), total: z.number() }),
+          },
+        },
       },
       500: {
         description: 'Server error',
@@ -54,16 +68,31 @@ adminCustomers.openapi(
   async (c) => {
     try {
       const supabase = c.get('supabase');
-      const { data, error } = await supabase
-        .from('customers')
-        .select('*')
-        .order('updated_at', { ascending: false });
+      const { keyword, isSubscribed, page, pageSize } = c.req.valid('query');
+
+      let query = supabase.from('customers').select('*', { count: 'exact' });
+
+      if (keyword) {
+        // keyword di-escape: koma & tanda kurung memutus sintaks filter PostgREST
+        const safe = keyword.replace(/[,()]/g, ' ');
+        query = query.or(`name.ilike.%${safe}%,address.ilike.%${safe}%,phone.ilike.%${safe}%`);
+      }
+      if (isSubscribed !== undefined) {
+        query = query.eq('is_subscribed', isSubscribed === 'true');
+      }
+
+      const from = (page - 1) * pageSize;
+      const to = from + pageSize - 1;
+
+      const { data, error, count } = await query
+        .order('updated_at', { ascending: false })
+        .range(from, to);
 
       if (error) {
         return c.json({ error: error.message }, 500);
       }
 
-      return c.json(data || []);
+      return c.json({ data: data || [], total: count ?? 0 });
     } catch (err) {
       return c.json({ error: 'Internal server error' }, 500);
     }
