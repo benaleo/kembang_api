@@ -27,6 +27,7 @@ const addressBodySchema = z.object({
   recipient_address_detail: z.string().nullable().optional(),
   place: z.string().nullable().optional(),
   recipient_geo: z.object({ lat: z.number(), lng: z.number() }).nullable().optional(),
+  recipient_distances: z.number().nullable().optional(),
   is_default: z.boolean().optional(),
 });
 
@@ -128,11 +129,13 @@ adminAddresses.openapi(
         .eq('customer_id', customerId);
     }
 
-    let recipientDistances = 0;
-    try {
-      recipientDistances = await computeDistance(body);
-    } catch (e) {
-      console.error('Distance calculation failed:', e);
+    let recipientDistances = body.recipient_distances ?? 0;
+    if (body.recipient_distances == null) {
+      try {
+        recipientDistances = await computeDistance(body);
+      } catch (e) {
+        console.error('Distance calculation failed:', e);
+      }
     }
 
     const { data, error } = await supabase
@@ -208,12 +211,14 @@ adminAddresses.openapi(
         .neq('id', id);
     }
 
-    let updateBody: typeof body & { recipient_distances?: number } = body;
-    try {
-      const recipientDistances = await computeDistance(body);
-      updateBody = { ...body, recipient_distances: recipientDistances };
-    } catch (e) {
-      console.error('Distance calculation failed:', e);
+    let updateBody: typeof body = body;
+    if (body.recipient_distances == null) {
+      try {
+        const recipientDistances = await computeDistance(body);
+        updateBody = { ...body, recipient_distances: recipientDistances };
+      } catch (e) {
+        console.error('Distance calculation failed:', e);
+      }
     }
 
     const { data, error } = await supabase
