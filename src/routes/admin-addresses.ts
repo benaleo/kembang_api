@@ -1,8 +1,23 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { Bindings, Variables } from '../types';
-import { getDistanceKm } from '../lib/gomaps';
+import { getDistanceKm, geocodeAddress } from '../lib/gomaps';
 
 const adminAddresses = new OpenAPIHono<{ Bindings: Bindings; Variables: Variables }>();
+
+/** Hitung jarak dari koordinat peta (recipient_geo) atau geocode alamat teks. */
+async function computeDistance(body: {
+  recipient_address?: string | null;
+  recipient_geo?: { lat: number; lng: number } | null;
+}): Promise<number> {
+  if (body.recipient_geo?.lat !== undefined && body.recipient_geo?.lng !== undefined) {
+    return getDistanceKm(body.recipient_geo.lat, body.recipient_geo.lng);
+  }
+  if (body.recipient_address) {
+    const geo = await geocodeAddress(body.recipient_address);
+    if (geo) return getDistanceKm(geo.lat, geo.lng);
+  }
+  return 0;
+}
 
 const addressBodySchema = z.object({
   label: z.string().nullable().optional(),
@@ -114,12 +129,10 @@ adminAddresses.openapi(
     }
 
     let recipientDistances = 0;
-    if (body.recipient_address) {
-      try {
-        recipientDistances = await getDistanceKm(c.env.GOMAPS_APIKEY, body.recipient_address);
-      } catch (e) {
-        console.error('GoMaps distance failed:', e);
-      }
+    try {
+      recipientDistances = await computeDistance(body);
+    } catch (e) {
+      console.error('Distance calculation failed:', e);
     }
 
     const { data, error } = await supabase
@@ -196,13 +209,11 @@ adminAddresses.openapi(
     }
 
     let updateBody: typeof body & { recipient_distances?: number } = body;
-    if (body.recipient_address) {
-      try {
-        const recipientDistances = await getDistanceKm(c.env.GOMAPS_APIKEY, body.recipient_address);
-        updateBody = { ...body, recipient_distances: recipientDistances };
-      } catch (e) {
-        console.error('GoMaps distance failed:', e);
-      }
+    try {
+      const recipientDistances = await computeDistance(body);
+      updateBody = { ...body, recipient_distances: recipientDistances };
+    } catch (e) {
+      console.error('Distance calculation failed:', e);
     }
 
     const { data, error } = await supabase

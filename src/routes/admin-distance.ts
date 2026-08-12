@@ -40,8 +40,7 @@ adminDistance.openapi(
     const { latitude, longitude } = c.req.valid('json');
 
     try {
-      const destination = `${latitude},${longitude}`;
-      const distance = await getDistanceKm(c.env.GOMAPS_APIKEY, destination);
+      const distance = await getDistanceKm(latitude, longitude);
       return c.json({ distance });
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Failed to compute distance';
