@@ -1,23 +1,9 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { Bindings, Variables } from '../types';
 import { getDistanceKm, geocodeAddress } from '../lib/gomaps';
+import { computeDistance } from '../lib/gomaps';
 
 const adminAddresses = new OpenAPIHono<{ Bindings: Bindings; Variables: Variables }>();
-
-/** Hitung jarak dari koordinat peta (recipient_geo) atau geocode alamat teks. */
-async function computeDistance(body: {
-  recipient_address?: string | null;
-  recipient_geo?: { lat: number; lng: number } | null;
-}): Promise<number> {
-  if (body.recipient_geo?.lat !== undefined && body.recipient_geo?.lng !== undefined) {
-    return getDistanceKm(body.recipient_geo.lat, body.recipient_geo.lng);
-  }
-  if (body.recipient_address) {
-    const geo = await geocodeAddress(body.recipient_address);
-    if (geo) return getDistanceKm(geo.lat, geo.lng);
-  }
-  return 0;
-}
 
 const addressBodySchema = z.object({
   label: z.string().nullable().optional(),

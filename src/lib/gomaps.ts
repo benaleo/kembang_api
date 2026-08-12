@@ -38,3 +38,21 @@ export async function geocodeAddress(
   if (!results.length) return null;
   return { lat: parseFloat(results[0].lat), lng: parseFloat(results[0].lon) };
 }
+
+/**
+ * Hitung jarak (km) dari koordinat peta (recipient_geo) atau geocode alamat teks.
+ * Return 0 kalau tidak ada koordinat maupun alamat.
+ */
+export async function computeDistance(body: {
+  recipient_address?: string | null;
+  recipient_geo?: { lat: number; lng: number } | null;
+}): Promise<number> {
+  if (body.recipient_geo?.lat !== undefined && body.recipient_geo?.lng !== undefined) {
+    return getDistanceKm(body.recipient_geo.lat, body.recipient_geo.lng);
+  }
+  if (body.recipient_address) {
+    const geo = await geocodeAddress(body.recipient_address);
+    if (geo) return getDistanceKm(geo.lat, geo.lng);
+  }
+  return 0;
+}

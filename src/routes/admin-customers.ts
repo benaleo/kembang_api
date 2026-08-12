@@ -1,5 +1,6 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { Bindings, Variables } from '../types';
+import { computeDistance } from '../lib/gomaps';
 
 const adminCustomers = new OpenAPIHono<{ Bindings: Bindings; Variables: Variables }>();
 
@@ -15,6 +16,17 @@ const customerBodySchema = z.object({
   subs_at: z.string().nullable().optional(),
   subs_end_at: z.string().nullable().optional(),
   address_note: z.string().nullable().optional(),
+  customer_addresses: z.array(z.object({
+    label: z.string().nullable().optional(),
+    recipient_name: z.string().nullable().optional(),
+    recipient_phone: z.string().nullable().optional(),
+    recipient_address: z.string().nullable().optional(),
+    recipient_address_detail: z.string().nullable().optional(),
+    place: z.string().nullable().optional(),
+    recipient_geo: z.object({ lat: z.number(), lng: z.number() }).nullable().optional(),
+    recipient_distances: z.number().nullable().optional(),
+    is_default: z.boolean().optional(),
+  })).optional(),
 });
 
 const customerSchema = z.object({
@@ -212,16 +224,49 @@ adminCustomers.openapi(
   async (c) => {
     try {
       const supabase = c.get('supabase');
-      const body = await c.req.json();
+      const { customer_addresses, ...customerData } = c.req.valid('json');
 
       const { data, error } = await supabase
         .from('customers')
-        .insert([body])
+        .insert([customerData])
         .select()
         .maybeSingle();
 
       if (error) {
         return c.json({ error: error.message }, 500);
+      }
+
+      // Insert bundled addresses if provided
+      if (customer_addresses?.length && data?.id) {
+        // First-address auto-default: if no address is marked default, mark the first one
+        const hasDefault = customer_addresses.some((a: any) => a.is_default);
+        if (!hasDefault) customer_addresses[0].is_default = true;
+
+        const rows = await Promise.all(
+          customer_addresses.map(async (addr: any) => {
+            let dist = addr.recipient_distances ?? 0;
+            if (addr.recipient_distances == null) {
+              try { dist = await computeDistance(addr); } catch (e) {
+                console.error('Distance calculation failed:', e);
+              }
+            }
+            return {
+              ...addr,
+              user_id: null,
+              customer_id: data.id,
+              recipient_distances: dist,
+            };
+          }),
+        );
+
+        const { error: addrError } = await supabase
+          .from('customer_addresses')
+          .insert(rows);
+
+        if (addrError) {
+          console.error('Failed to insert customer addresses:', addrError);
+          return c.json({ error: addrError.message }, 500);
+        }
       }
 
       return c.json(data, 201);
