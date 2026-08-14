@@ -9,6 +9,7 @@ import adminAddresses from './routes/admin-addresses';
 import adminCustomers from './routes/admin-customers';
 import adminProducts from './routes/admin-products';
 import adminCustomerOptions from './routes/admin-customer-options';
+import adminProductOptions from './routes/admin-product-options';
 import adminDistance from './routes/admin-distance';
 import myProfile from './routes/my-profile';
 import { requireAuth } from './middleware/auth';
@@ -112,6 +113,7 @@ app.route('/api/v1/admin/customers/:customerId/addresses', adminAddresses);
 app.route('/api/v1/admin/customers', adminCustomers);
 app.route('/api/v1/admin/products', adminProducts);
 app.route('/api/v1/admin/customer-options', adminCustomerOptions);
+app.route('/api/v1/admin/product-options', adminProductOptions);
 app.route('/api/v1/admin/distance', adminDistance);
 app.route('/api/v1/my-profile', myProfile);
 

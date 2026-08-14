@@ -31,6 +31,7 @@ const productSchema = z.object({
 
 const listProductsQuerySchema = z.object({
   keyword: z.string().optional(),
+  category: z.string().optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(10),
 });
@@ -60,7 +61,7 @@ adminProducts.openapi(
     },
   }),
   async (c) => {
-    const { keyword, page, pageSize } = c.req.valid('query');
+    const { keyword, category, page, pageSize } = c.req.valid('query');
     const supabase = c.get('supabase');
 
     try {
@@ -72,7 +73,11 @@ adminProducts.openapi(
         .range((page - 1) * pageSize, page * pageSize - 1);
 
       if (keyword) {
-        query = query.ilike('name', `%${keyword}%`);
+        query = query.or(`name.ilike.%${keyword}%,code.ilike.%${keyword}%`);
+      }
+
+      if (category) {
+        query = query.eq('category', category);
       }
 
       const { data, error, count } = await query;
