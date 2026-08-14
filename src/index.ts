@@ -11,6 +11,7 @@ import adminProducts from './routes/admin-products';
 import adminCustomerOptions from './routes/admin-customer-options';
 import adminProductOptions from './routes/admin-product-options';
 import adminTransactions from './routes/admin-transactions';
+import adminCountDeliveryCost from './routes/admin-count-delivery-cost';
 import adminDistance from './routes/admin-distance';
 import myProfile from './routes/my-profile';
 import { requireAuth } from './middleware/auth';
@@ -116,6 +117,7 @@ app.route('/api/v1/admin/transactions', adminTransactions);
 app.route('/api/v1/admin/products', adminProducts);
 app.route('/api/v1/admin/customer-options', adminCustomerOptions);
 app.route('/api/v1/admin/product-options', adminProductOptions);
+app.route('/api/v1/admin/count-delivery-cost', adminCountDeliveryCost);
 app.route('/api/v1/admin/distance', adminDistance);
 app.route('/api/v1/my-profile', myProfile);
 
