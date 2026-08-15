@@ -90,100 +90,104 @@ class ResponseStream {
     controller: ReadableStreamDefaultController<Uint8Array>,
   ): Promise<void> {
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-      const response = await this.callApi();
-      if (!response.ok) {
-        const body = await response.text();
-        throw new Error(`Gemini API error ${response.status}: ${body.slice(0, 200)}`);
-      }
-
-      // Read SSE stream from Gemini
-      const reader = response.body!.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let currentText = '';
-      const toolCalls: Array<{ name: string; args: any }> = [];
+      const ac = new AbortController();
+      const timeout = setTimeout(() => ac.abort(), 45_000); // 45s per Gemini call
 
       try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
+        const response = await this.callApi(ac.signal);
+        if (!response.ok) {
+          const body = await response.text();
+          throw new Error(`Gemini API error ${response.status}: ${body.slice(0, 200)}`);
+        }
 
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed.startsWith('data:')) continue;
-            const jsonStr = trimmed.slice(5).trim();
-            if (!jsonStr) continue;
+        // Read SSE stream from Gemini
+        const reader = response.body!.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let currentText = '';
+        const toolCalls: Array<{ name: string; args: any }> = [];
 
-            try {
-              const event = JSON.parse(jsonStr);
-              const parts = event.candidates?.[0]?.content?.parts || [];
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
 
-              for (const part of parts) {
-                // Skip Gemini 2.5 thinking blocks
-                if (part.thought) continue;
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed.startsWith('data:')) continue;
+              const jsonStr = trimmed.slice(5).trim();
+              if (!jsonStr) continue;
 
-                if (part.text) {
-                  currentText += part.text;
-                  controller.enqueue(
-                    this.encode(`data: ${JSON.stringify({ type: 'delta', text: part.text })}\n\n`),
-                  );
-                } else if (part.functionCall) {
-                  toolCalls.push({
-                    name: part.functionCall.name,
-                    args: part.functionCall.args || {},
-                  });
+              try {
+                const event = JSON.parse(jsonStr);
+                const parts = event.candidates?.[0]?.content?.parts || [];
+
+                for (const part of parts) {
+                  if (part.thought) continue;
+
+                  if (part.text) {
+                    currentText += part.text;
+                    controller.enqueue(
+                      this.encode(`data: ${JSON.stringify({ type: 'delta', text: part.text })}\n\n`),
+                    );
+                  } else if (part.functionCall) {
+                    toolCalls.push({
+                      name: part.functionCall.name,
+                      args: part.functionCall.args || {},
+                    });
+                  }
                 }
+              } catch {
+                // Skip malformed SSE chunks
               }
-            } catch {
-              // Skip malformed SSE chunks
             }
           }
+        } finally {
+          reader.releaseLock();
         }
-      } finally {
-        reader.releaseLock();
-      }
 
-      if (toolCalls.length === 0) {
-        // Text-only response — done
-        return;
-      }
-
-      // Append model's function calls to contents
-      this.contents.push({
-        role: 'model',
-        parts: toolCalls.map((tc) => ({
-          functionCall: { name: tc.name, args: tc.args },
-        })),
-      });
-
-      // Execute each tool and collect function responses
-      const functionResponses: any[] = [];
-      for (const tc of toolCalls) {
-        let result: any;
-        try {
-          const tool = aiTools.find((t) => t.name === tc.name);
-          if (!tool) {
-            result = { error: `Tool tidak dikenal: ${tc.name}` };
-          } else {
-            result = await tool.execute(tc.args, this.supabase);
-          }
-        } catch (e) {
-          result = { error: e instanceof Error ? e.message : 'Tool execution error' };
+        if (toolCalls.length === 0) {
+          return;
         }
-        functionResponses.push({
-          functionResponse: { name: tc.name, response: result },
+
+        // Append model's function calls to contents
+        this.contents.push({
+          role: 'model',
+          parts: toolCalls.map((tc) => ({
+            functionCall: { name: tc.name, args: tc.args },
+          })),
         });
-      }
 
-      // Append function responses as "user" role (Gemini convention)
-      this.contents.push({ role: 'user', parts: functionResponses });
+        // Execute each tool and collect function responses
+        const functionResponses: any[] = [];
+        for (const tc of toolCalls) {
+          let result: any;
+          try {
+            const tool = aiTools.find((t) => t.name === tc.name);
+            if (!tool) {
+              result = { error: `Tool tidak dikenal: ${tc.name}` };
+            } else {
+              result = await tool.execute(tc.args, this.supabase);
+            }
+          } catch (e) {
+            result = { error: e instanceof Error ? e.message : 'Tool execution error' };
+          }
+          functionResponses.push({
+            functionResponse: { name: tc.name, response: result },
+          });
+        }
+
+        this.contents.push({ role: 'user', parts: functionResponses });
+      } finally {
+        clearTimeout(timeout);
+      }
     }
   }
 
-  private async callApi(): Promise<Response> {
+  private async callApi(signal?: AbortSignal): Promise<Response> {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:streamGenerateContent?alt=sse`;
     return fetch(url, {
       method: 'POST',
@@ -196,6 +200,7 @@ class ResponseStream {
         contents: this.contents,
         tools: toGeminiTools(),
       }),
+      signal,
     });
   }
 }
