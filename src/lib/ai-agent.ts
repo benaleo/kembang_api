@@ -150,6 +150,9 @@ class ResponseStream {
         }
 
         if (toolCalls.length === 0) {
+          if (!currentText) {
+            throw new Error('Gemini returned empty response (no text, no tool calls). Coba ulangi.');
+          }
           return;
         }
 
