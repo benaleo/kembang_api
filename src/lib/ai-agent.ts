@@ -91,7 +91,7 @@ class ResponseStream {
   ): Promise<void> {
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
       const ac = new AbortController();
-      const timeout = setTimeout(() => ac.abort(), 45_000); // 45s per Gemini call
+      const timeout = setTimeout(() => ac.abort(), 90_000); // 90s per Gemini call
 
       try {
         const response = await this.callApi(ac.signal);
