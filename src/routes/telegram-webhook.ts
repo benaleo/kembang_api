@@ -2,6 +2,7 @@ import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { Bindings, Variables } from '../types';
 import { sendMessage } from '../lib/telegram';
 import { runAiAgent } from '../lib/ai-agent';
+import { pickModel } from '../lib/ai-router';
 
 const telegramWebhook = new OpenAPIHono<{ Bindings: Bindings; Variables: Variables }>();
 
@@ -71,10 +72,10 @@ telegramWebhook.openapi(
 
       const userText = update.message.text;
       const supabase = c.get('supabase');
-      const apiKey = c.env.ANTHROPIC_API_KEY;
+      const apiKey = c.env.GEMINI_API_KEY;
 
       if (!apiKey) {
-        await sendMessage(botToken, chatId, 'Error: ANTHROPIC_API_KEY belum dikonfigurasi.');
+        await sendMessage(botToken, chatId, 'Error: GEMINI_API_KEY belum dikonfigurasi.');
         return c.json({ ok: true as const });
       }
 
@@ -97,8 +98,15 @@ telegramWebhook.openapi(
       // Add user message
       sessionMessages.push({ role: 'user', content: userText });
 
+      const modelSelection = await pickModel(supabase);
+
+      if (!modelSelection.model_id) {
+        await sendMessage(botToken, chatId, `Semua model AI sedang limit. Coba lagi ~${modelSelection.est_wait_seconds} detik.`);
+        return c.json({ ok: true as const });
+      }
+
       // Run AI agent (non-streaming: collect all deltas)
-      const stream = await runAiAgent(sessionMessages, supabase, apiKey);
+      const stream = await runAiAgent(sessionMessages, supabase, apiKey, modelSelection.model_id);
       const reader = stream.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
