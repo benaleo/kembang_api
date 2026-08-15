@@ -208,10 +208,10 @@ export const aiTools: AiTool[] = [
       },
       required: ['date', 'route'],
     },
-    async execute(params) {
+    async execute(params, supabase) {
       const { date, route } = params;
       try {
-        const result = await computeDeliveryCost(date, route, null as any);
+        const result = await computeDeliveryCost(date, route, supabase);
         return {
           distances: result.distances,
           total: formatRupiah(result.total),
