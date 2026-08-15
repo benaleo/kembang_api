@@ -14,6 +14,8 @@ import adminTransactions from './routes/admin-transactions';
 import adminCountDeliveryCost from './routes/admin-count-delivery-cost';
 import adminDistance from './routes/admin-distance';
 import myProfile from './routes/my-profile';
+import aiChat from './routes/ai-chat';
+import telegramWebhook from './routes/telegram-webhook';
 import { requireAuth } from './middleware/auth';
 import { Bindings, Variables } from './types';
 
@@ -120,6 +122,8 @@ app.route('/api/v1/admin/product-options', adminProductOptions);
 app.route('/api/v1/admin/count-delivery-cost', adminCountDeliveryCost);
 app.route('/api/v1/admin/distance', adminDistance);
 app.route('/api/v1/my-profile', myProfile);
+app.route('/api/v1/ai/chat', aiChat);
+app.route('/telegram/webhook', telegramWebhook);
 
 app.doc('/openapi.json', {
   openapi: '3.0.0',
