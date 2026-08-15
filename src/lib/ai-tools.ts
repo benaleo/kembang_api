@@ -90,6 +90,87 @@ export const aiTools: AiTool[] = [
     },
   },
   {
+    name: 'createCustomer',
+    description:
+      'Daftarkan pelanggan baru. PENTING: tampilkan ringkasan data ke user untuk konfirmasi SEBELUM memanggil tool ini. Gunakan hanya kalau pelanggan tidak ditemukan saat searchCustomers.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Nama lengkap pelanggan' },
+        phone: { type: 'string', description: 'Nomor telepon (format lokal, contoh 0812xxxx)' },
+        address: { type: 'string', description: 'Alamat lengkap pelanggan' },
+        place: { type: 'string', description: 'Tempat/patokan lokasi' },
+        address_note: { type: 'string', description: 'Catatan tambahan untuk kurir' },
+      },
+      required: ['name'],
+    },
+    async execute(params) {
+      const { name, phone, address, place, address_note } = params;
+      if (!name || !name.trim()) {
+        return { error: 'Nama pelanggan wajib diisi' };
+      }
+      const data = await apiPost('/api/v1/admin/customers', {
+        name: name.trim(),
+        phone: phone || null,
+        address: address || null,
+        place: place || null,
+        address_note: address_note || null,
+      });
+      return {
+        success: true,
+        customer_id: data?.id,
+        customer: {
+          id: data?.id,
+          name: data?.name,
+          phone: data?.phone,
+          address: data?.address,
+        },
+        message: `Pelanggan ${data?.name} berhasil didaftarkan (ID: ${data?.id})`,
+      };
+    },
+  },
+  {
+    name: 'updateCustomer',
+    description:
+      'Perbarui data pelanggan yang sudah ada berdasarkan ID. Hanya kirim field yang ingin diubah. PENTING: konfirmasi ke user SEBELUM memanggil tool ini.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        customer_id: { type: 'number', description: 'ID pelanggan yang akan diubah' },
+        name: { type: 'string', description: 'Nama baru (opsional)' },
+        phone: { type: 'string', description: 'Nomor telepon baru (opsional)' },
+        address: { type: 'string', description: 'Alamat baru (opsional)' },
+        place: { type: 'string', description: 'Tempat/patokan baru (opsional)' },
+        address_note: { type: 'string', description: 'Catatan kurir baru (opsional)' },
+      },
+      required: ['customer_id'],
+    },
+    async execute(params) {
+      const { customer_id, ...updates } = params;
+      if (!customer_id) {
+        return { error: 'customer_id wajib diisi' };
+      }
+      const clean: Record<string, any> = {};
+      for (const [k, v] of Object.entries(updates)) {
+        if (v !== undefined && v !== null && v !== '') clean[k] = v;
+      }
+      if (Object.keys(clean).length === 0) {
+        return { error: 'Tidak ada field yang akan diubah' };
+      }
+      const data = await apiPatch(`/api/v1/admin/customers/${customer_id}`, clean);
+      return {
+        success: true,
+        customer: {
+          id: data?.id,
+          name: data?.name,
+          phone: data?.phone,
+          address: data?.address,
+        },
+        message: `Data pelanggan ${data?.name} berhasil diperbarui`,
+      };
+    },
+  },
+  {
     name: 'listProducts',
     description: 'Daftar semua produk yang tersedia beserta harga',
     input_schema: {
