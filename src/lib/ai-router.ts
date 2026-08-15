@@ -13,9 +13,16 @@ const FALLBACK_MODEL_ID = 'gemini-2.5-flash';
  */
 export async function pickModel(supabase: any): Promise<ModelSelectionResult> {
   try {
+    // Single atomic query: find the first model with available quota and reserve a slot.
+    // Uses FOR UPDATE + conditional increment to prevent double-allocate.
+    const now = new Date();
+    const minuteStart = new Date(now);
+    minuteStart.setSeconds(0, 0);
+    const dayStr = now.toISOString().slice(0, 10);
+
     const { data: models, error: queryError } = await supabase
       .from('ai_models')
-      .select('*')
+      .select('model_id, name, rpm_limit, rpd_limit, rpm_used, rpd_used, rpm_window_start, rpd_window_date')
       .eq('is_active', true)
       .eq('supports_tools', true)
       .is('deleted_at', null)
@@ -25,9 +32,12 @@ export async function pickModel(supabase: any): Promise<ModelSelectionResult> {
       return { model_id: FALLBACK_MODEL_ID, est_wait_seconds: 0 };
     }
 
+    // Try each model in priority order (at most 3 RPC calls — stop at first available)
     let minWait = Infinity;
+    const maxRpcCalls = Math.min(models.length, 3);
 
-    for (const model of models) {
+    for (let i = 0; i < maxRpcCalls; i++) {
+      const model = models[i];
       const { data: rpcData, error: rpcError } = await supabase.rpc('acquire_model_quota', {
         p_model_id: model.model_id,
       });
