@@ -1,6 +1,9 @@
 import { aiTools } from './ai-tools';
 
 const MAX_TOOL_ROUNDS = 10;
+// free-stack ignored the system prompt (responds as a generic Claude Code agent),
+// so it's demoted to last-resort fallback only.
+const DEFAULT_MODELS = ['auto/cheap', 'cc/claude-sonnet-5', 'free-stack'];
 
 const SYSTEM_PROMPT = `Kamu adalah asisten AI untuk toko bunga Kembang. Kamu bisa membantu operator untuk:
 - Mencari data pelanggan dan produk
@@ -16,66 +19,46 @@ Aturan:
 
 type Message = { role: 'user' | 'assistant'; content: string };
 
-function toGeminiContents(messages: Message[]): any[] {
-  return messages.map((m) => ({
-    role: m.role === 'user' ? 'user' : 'model',
-    parts: [{ text: m.content }],
-  }));
-}
-
-function toGeminiTools(): any[] {
-  return [
-    {
-      function_declarations: aiTools.map((t) => ({
-        name: t.name,
-        description: t.description,
-        parameters: t.input_schema,
-      })),
-    },
-  ];
+interface ToolCall {
+  id: string;
+  name: string;
+  arguments: string;
 }
 
 /**
- * Run the AI agent and return a ReadableStream that yields SSE events:
- * - data: {"type":"delta","text":"..."} — text delta
- * - data: {"type":"done"} — stream finished
- * - data: {"type":"error","message":"..."} — error occurred
+ * Run the AI agent via OmniRoute (OpenAI-compatible) with streaming.
+ * Tries models in priority order until one succeeds.
  */
 export async function runAiAgent(
   messages: Array<Message>,
   supabase: any,
   apiKey: string,
-  model: string = 'gemini-2.5-flash',
+  model?: string,
 ): Promise<ReadableStream<Uint8Array>> {
-  return new ResponseStream(messages, supabase, apiKey, model).body as ReadableStream<Uint8Array>;
+  const models = model ? [model, ...DEFAULT_MODELS.filter(m => m !== model)] : DEFAULT_MODELS;
+  return new ResponseStream(messages, supabase, apiKey, models).body as ReadableStream<Uint8Array>;
 }
 
 class ResponseStream {
   body: ReadableStream<Uint8Array>;
   private encoder = new TextEncoder();
-  private contents: any[];
 
   constructor(
     private messages: Array<Message>,
     private supabase: any,
     private apiKey: string,
-    private model: string,
+    private models: string[],
   ) {
-    this.contents = toGeminiContents(messages);
     this.body = new ReadableStream({
       start: (controller) => {
         this.processLoop(controller)
           .then(() => {
-            controller.enqueue(
-              this.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`),
-            );
+            controller.enqueue(this.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`));
             controller.close();
           })
           .catch((e) => {
             const err = e instanceof Error ? e.message : 'Unknown error';
-            controller.enqueue(
-              this.encode(`data: ${JSON.stringify({ type: 'error', message: err })}\n\n`),
-            );
+            controller.enqueue(this.encode(`data: ${JSON.stringify({ type: 'error', message: err })}\n\n`));
             controller.close();
           });
       },
@@ -86,124 +69,142 @@ class ResponseStream {
     return this.encoder.encode(s);
   }
 
-  private async processLoop(
-    controller: ReadableStreamDefaultController<Uint8Array>,
-  ): Promise<void> {
+  private async processLoop(controller: ReadableStreamDefaultController<Uint8Array>): Promise<void> {
+    const apiMessages = this.messages.map(m => ({ role: m.role, content: m.content }));
+
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-      const ac = new AbortController();
-      const timeout = setTimeout(() => ac.abort(), 90_000); // 90s per Gemini call
+      // Try each model in priority order
+      let lastError: string | null = null;
 
-      try {
-        const response = await this.callApi(ac.signal);
-        if (!response.ok) {
-          const body = await response.text();
-          throw new Error(`Gemini API error ${response.status}: ${body.slice(0, 200)}`);
-        }
-
-        // Read SSE stream from Gemini
-        const reader = response.body!.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-        let currentText = '';
-        const toolCalls: Array<{ name: string; args: any }> = [];
-
+      for (const modelId of this.models) {
         try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
+          const result = await this.callApi(apiMessages, modelId);
+          if (result.error) {
+            lastError = result.error;
+            continue;
+          }
 
-            for (const line of lines) {
-              const trimmed = line.trim();
-              if (!trimmed.startsWith('data:')) continue;
-              const jsonStr = trimmed.slice(5).trim();
-              if (!jsonStr) continue;
+          // Process the response
+          if (result.toolCalls && result.toolCalls.length > 0) {
+            // Append assistant message with tool calls
+            apiMessages.push({
+              role: 'assistant',
+              content: result.text || null,
+              tool_calls: result.toolCalls.map(tc => ({
+                id: tc.id,
+                type: 'function',
+                function: { name: tc.name, arguments: tc.arguments },
+              })),
+            } as any);
 
+            // Execute tools and collect results
+            const toolResults: any[] = [];
+            for (const tc of result.toolCalls) {
+              let parsedArgs: Record<string, any> = {};
+              try { parsedArgs = JSON.parse(tc.arguments); } catch {}
+
+              let toolResult: any;
               try {
-                const event = JSON.parse(jsonStr);
-                const parts = event.candidates?.[0]?.content?.parts || [];
-
-                for (const part of parts) {
-                  if (part.thought) continue;
-
-                  if (part.text) {
-                    currentText += part.text;
-                    controller.enqueue(
-                      this.encode(`data: ${JSON.stringify({ type: 'delta', text: part.text })}\n\n`),
-                    );
-                  } else if (part.functionCall) {
-                    toolCalls.push({
-                      name: part.functionCall.name,
-                      args: part.functionCall.args || {},
-                    });
-                  }
+                const tool = aiTools.find((t) => t.name === tc.name);
+                if (!tool) {
+                  toolResult = { error: `Tool tidak dikenal: ${tc.name}` };
+                } else {
+                  toolResult = await tool.execute(parsedArgs, this.supabase);
                 }
-              } catch {
-                // Skip malformed SSE chunks
+              } catch (e) {
+                toolResult = { error: e instanceof Error ? e.message : 'Tool execution error' };
               }
+
+              toolResults.push({
+                role: 'tool',
+                tool_call_id: tc.id,
+                content: JSON.stringify(toolResult),
+              });
             }
-          }
-        } finally {
-          reader.releaseLock();
-        }
 
-        if (toolCalls.length === 0) {
-          if (!currentText) {
-            throw new Error('Gemini returned empty response (no text, no tool calls). Coba ulangi.');
-          }
-          return;
-        }
+            apiMessages.push(...toolResults);
+            break; // Success — continue to next round with new messages
 
-        // Append model's function calls to contents
-        this.contents.push({
-          role: 'model',
-          parts: toolCalls.map((tc) => ({
-            functionCall: { name: tc.name, args: tc.args },
-          })),
-        });
-
-        // Execute each tool and collect function responses
-        const functionResponses: any[] = [];
-        for (const tc of toolCalls) {
-          let result: any;
-          try {
-            const tool = aiTools.find((t) => t.name === tc.name);
-            if (!tool) {
-              result = { error: `Tool tidak dikenal: ${tc.name}` };
-            } else {
-              result = await tool.execute(tc.args, this.supabase);
+          } else {
+            // Text-only response — done
+            if (result.text) {
+              controller.enqueue(this.encode(`data: ${JSON.stringify({ type: 'delta', text: result.text })}\n\n`));
             }
-          } catch (e) {
-            result = { error: e instanceof Error ? e.message : 'Tool execution error' };
+            return;
           }
-          functionResponses.push({
-            functionResponse: { name: tc.name, response: result },
-          });
+        } catch (e) {
+          lastError = e instanceof Error ? e.message : 'Unknown error';
+          continue;
         }
+      }
 
-        this.contents.push({ role: 'user', parts: functionResponses });
-      } finally {
-        clearTimeout(timeout);
+      // If all models failed for this round, throw
+      if (!apiMessages.some(m => (m as any).tool_calls)) {
+        throw new Error(lastError || 'All models failed');
       }
     }
   }
 
-  private async callApi(signal?: AbortSignal): Promise<Response> {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:streamGenerateContent?alt=sse`;
-    return fetch(url, {
-      method: 'POST',
-      headers: {
-        'x-goog-api-key': this.apiKey,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
-        contents: this.contents,
-        tools: toGeminiTools(),
-      }),
-      signal,
-    });
+  private async callApi(
+    messages: any[],
+    modelId: string,
+  ): Promise<{ text: string | null; toolCalls: ToolCall[] | null; error?: string }> {
+    const url = `http://localhost:20128/v1/chat/completions`;
+    const ac = new AbortController();
+    const timeout = setTimeout(() => ac.abort(), 90_000);
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: modelId,
+          messages: [
+            { role: 'system', content: SYSTEM_PROMPT },
+            ...messages,
+          ],
+          tools: aiTools.map((t) => ({
+            type: 'function',
+            function: {
+              name: t.name,
+              description: t.description,
+              parameters: t.input_schema,
+            },
+          })),
+          stream: false,
+          temperature: 0.7,
+        }),
+        signal: ac.signal,
+      });
+
+      clearTimeout(timeout);
+
+      if (!response.ok) {
+        const body = await response.text();
+        return { text: null, toolCalls: null, error: `API error ${response.status}: ${body.slice(0, 200)}` };
+      }
+
+      const data = await response.json() as any;
+      const choice = data.choices?.[0];
+      if (!choice) {
+        return { text: null, toolCalls: null, error: 'No choices in response' };
+      }
+
+      const message = choice.message;
+      const text = message?.content || null;
+      const toolCalls = message?.tool_calls?.map((tc: any) => ({
+        id: tc.id || `call_${Date.now()}`,
+        name: tc.function.name,
+        arguments: typeof tc.function.arguments === 'string' ? tc.function.arguments : JSON.stringify(tc.function.arguments),
+      })) || null;
+
+      return { text, toolCalls };
+    } catch (e) {
+      clearTimeout(timeout);
+      throw e;
+    }
   }
 }

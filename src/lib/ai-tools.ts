@@ -1,4 +1,3 @@
-import { getDistanceKm } from './gomaps';
 import { computeDeliveryCost } from './delivery-cost';
 
 export interface AiTool {
@@ -8,89 +7,118 @@ export interface AiTool {
   execute: (params: Record<string, any>, supabase: any) => Promise<Record<string, any>>;
 }
 
-// ---------------------------------------------------------------------------
-// generateInvoice — duplicated from admin-transactions for tool isolation
-// ---------------------------------------------------------------------------
+const API_BASE = 'http://localhost:8787';
 
-function generateInvoice(sequence: number, date: string, prefix = 'KEMBANGSELADANG'): string {
-  const dateObj = new Date(date);
-  const day = dateObj.getDate();
-  const month = dateObj.getMonth() + 1;
-  const year = dateObj.getFullYear();
-  return `${sequence}-${day}/${month}/${year}/${prefix}`;
+async function apiGet(path: string, params?: Record<string, string>): Promise<any> {
+  const url = new URL(`${API_BASE}${path}`);
+  if (params) {
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== null) url.searchParams.set(k, v);
+    }
+  }
+  const res = await fetch(url.toString(), {
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Internal-Token': 'kembang-internal',
+    },
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`API ${res.status}: ${body.slice(0, 200)}`);
+  }
+  return res.json();
+}
+
+async function apiPost(path: string, body: any): Promise<any> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Internal-Token': 'kembang-internal',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`API ${res.status}: ${text.slice(0, 200)}`);
+  }
+  return res.json();
+}
+
+async function apiPatch(path: string, body: any): Promise<any> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Internal-Token': 'kembang-internal',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`API ${res.status}: ${text.slice(0, 200)}`);
+  }
+  return res.json();
 }
 
 function formatRupiah(n: number): string {
   return `Rp ${n.toLocaleString('id-ID')}`;
 }
 
-// ---------------------------------------------------------------------------
-// Tool definitions
-// ---------------------------------------------------------------------------
-
 export const aiTools: AiTool[] = [
   {
     name: 'searchCustomers',
     description: 'Cari pelanggan berdasarkan nama atau nomor telepon',
     input_schema: {
-      type: 'object' as const,
+      type: 'object',
       properties: {
-        keyword: { type: 'string', description: 'Nama atau telepon yang dicari' },
+        keyword: { type: 'string', description: 'Nama atau nomor telepon pelanggan' },
       },
       required: ['keyword'],
     },
-    async execute(params, supabase) {
+    async execute(params) {
       const { keyword } = params;
-      const { data, error } = await supabase
-        .from('customers')
-        .select('id, name, phone')
-        .or(`name.ilike.%${keyword}%,phone.ilike.%${keyword}%`)
-        .limit(10);
-      if (error) return { error: error.message };
-      if (!data || data.length === 0) return { results: [], message: 'Tidak ditemukan pelanggan dengan kata kunci tersebut' };
-      return { results: data };
+      const data = await apiGet('/api/v1/admin/customers', { search: keyword });
+      return {
+        customers: (data?.data || []).map((c: any) => ({
+          id: c.id,
+          name: c.name,
+          phone: c.phone,
+          address: c.address,
+        })),
+      };
     },
   },
   {
     name: 'listProducts',
-    description: 'Daftar semua produk aktif',
+    description: 'Daftar semua produk yang tersedia beserta harga',
     input_schema: {
-      type: 'object' as const,
+      type: 'object',
       properties: {},
-      required: [],
     },
-    async execute(_params, supabase) {
-      const { data, error } = await supabase
-        .from('products')
-        .select('id, name, code, price, is_active')
-        .eq('is_active', true)
-        .order('name');
-      if (error) return { error: error.message };
-      if (!data || data.length === 0) return { results: [], message: 'Tidak ada produk aktif' };
+    async execute() {
+      const data = await apiGet('/api/v1/admin/products');
       return {
-        results: data.map((p: any) => ({
+        products: (data?.data || []).map((p: any) => ({
           id: p.id,
           name: p.name,
           code: p.code,
-          price: formatRupiah(p.price),
+          price: p.price,
+          price_formatted: formatRupiah(p.price || 0),
+          is_active: p.is_active,
         })),
       };
     },
   },
   {
     name: 'createOrder',
-    description:
-      'Buat pesanan baru. Konfirmasi detail ke user terlebih dahulu SEBELUM memanggil tool ini.',
+    description: 'Buat pesanan baru untuk pelanggan. PENTING: tampilkan detail ke user untuk konfirmasi SEBELUM memanggil tool ini.',
     input_schema: {
-      type: 'object' as const,
+      type: 'object',
       properties: {
-        date: { type: 'string', description: 'Tanggal pesanan (YYYY-MM-DD)' },
+        date: { type: 'string', description: 'Tanggal pesanan format YYYY-MM-DD' },
         customer_id: { type: 'number', description: 'ID pelanggan' },
-        customer_name: { type: 'string', description: 'Nama pelanggan (opsional)' },
-        customer_phone: { type: 'string', description: 'Nomor telepon pelanggan (opsional)' },
-        name_alter: { type: 'string', description: 'Nama alternatif / nama penerima' },
         note: { type: 'string', description: 'Catatan pesanan' },
-        note_route: { type: 'string', description: 'Catatan rute' },
         products: {
           type: 'array',
           items: {
@@ -105,79 +133,23 @@ export const aiTools: AiTool[] = [
           description: 'Daftar produk dalam pesanan',
         },
       },
-      required: ['date', 'customer_id', 'name_alter', 'products'],
+      required: ['date', 'customer_id', 'products'],
     },
-    async execute(params, supabase) {
-      const { date, customer_id, customer_name = '', customer_phone = '', name_alter, note = '', note_route = '', products } = params;
-
+    async execute(params) {
+      const { date, customer_id, note, products } = params;
       if (!products || products.length === 0) {
         return { error: 'Pesanan harus memiliki minimal 1 produk' };
       }
-
-      // 1. Generate invoice
-      const { data: sequenceData, error: seqError } = await supabase
-        .from('transaction_sequence_view')
-        .select('max_sequence')
-        .maybeSingle();
-      if (seqError) return { error: seqError.message };
-      const maxSeq = (sequenceData as any)?.max_sequence;
-      const sequence = maxSeq ? maxSeq + 1 : 1;
-      const invoice = generateInvoice(sequence, date, 'KEMBANGSELADANG');
-
-      // 2. Insert transaction
-      const { data: createdTransaction, error: txError } = await supabase
-        .from('transactions')
-        .insert([
-          {
-            date,
-            customer_id: customer_id || null,
-            customer_name,
-            customer_phone,
-            name_alter,
-            note,
-            note_route,
-            invoice,
-          },
-        ])
-        .select()
-        .single();
-      if (txError) return { error: txError.message };
-      if (!createdTransaction?.id) return { error: 'Gagal membuat transaksi' };
-
-      // 3. Insert products (level-1 only, no children)
-      const { data: parentRows, error: parentInsertError } = await supabase
-        .from('transaction_products')
-        .insert(
-          products.map((p: any) => ({
-            transaction_id: createdTransaction.id,
-            product_id: p.product_id,
-            qty: p.qty,
-            is_free: false,
-            parent_id: null,
-          })),
-        )
-        .select('id, product_id');
-      if (parentInsertError) return { error: parentInsertError.message };
-
-      // 4. cost_order = sum of (price * qty)
-      const cost_order = products.reduce(
-        (total: number, p: any) => total + p.price * p.qty,
-        0,
-      );
-
-      if (cost_order !== 0) {
-        await supabase
-          .from('transactions')
-          .update({ cost_order })
-          .eq('id', createdTransaction.id);
-      }
-
+      const data = await apiPost('/api/v1/admin/transactions', {
+        date,
+        customer_id,
+        note: note || '',
+        products,
+      });
       return {
-        message: `Pesanan berhasil dibuat`,
-        invoice,
-        transaction_id: createdTransaction.id,
-        total: formatRupiah(cost_order),
-        products_count: products.length,
+        success: true,
+        transaction_id: data?.data?.id,
+        message: `Pesanan berhasil dibuat (ID: ${data?.data?.id})`,
       };
     },
   },
@@ -185,101 +157,67 @@ export const aiTools: AiTool[] = [
     name: 'listOrdersByDate',
     description: 'Daftar pesanan berdasarkan tanggal',
     input_schema: {
-      type: 'object' as const,
+      type: 'object',
       properties: {
-        date: { type: 'string', description: 'Tanggal pesanan (YYYY-MM-DD)' },
+        date: { type: 'string', description: 'Tanggal format YYYY-MM-DD' },
       },
       required: ['date'],
     },
-    async execute(params, supabase) {
+    async execute(params) {
       const { date } = params;
-      const { data, error } = await supabase
-        .from('transactions')
-        .select('id, invoice, customer_name, name_alter, cost_order, cost_delivery, note, route, created_at')
-        .eq('date', date)
-        .order('id', { ascending: true });
-      if (error) return { error: error.message };
-      if (!data || data.length === 0) return { results: [], message: `Tidak ada pesanan tanggal ${date}` };
-
-      // Fetch products for each transaction
-      const txIds = data.map((t: any) => t.id);
-      const { data: tpData } = await supabase
-        .from('transaction_products')
-        .select('transaction_id, product_id, qty')
-        .in('transaction_id', txIds);
-
-      const { data: productNames } = await supabase
-        .from('products')
-        .select('id, name')
-        .in('id', [...new Set((tpData || []).map((tp: any) => tp.product_id))]);
-      const productMap = new Map((productNames || []).map((p: any) => [p.id, p.name]));
-
-      const orders = data.map((t: any) => {
-        const items = (tpData || [])
-          .filter((tp: any) => tp.transaction_id === t.id)
-          .map((tp: any) => ({
-            product: productMap.get(tp.product_id) || `#${tp.product_id}`,
-            qty: tp.qty,
-          }));
-        return {
+      const data = await apiGet('/api/v1/admin/transactions', { date });
+      return {
+        orders: (data?.data || []).map((t: any) => ({
           id: t.id,
-          invoice: t.invoice,
-          customer: t.customer_name || t.name_alter || '-',
-          total: t.cost_order ? formatRupiah(t.cost_order) : '-',
+          customer_name: t.customer_name,
+          date: t.date,
           route: t.route,
-          items,
-        };
-      });
-
-      return { date, count: orders.length, orders };
+          cost_delivery: t.cost_delivery,
+          products: t.products || [],
+        })),
+        total: data?.meta?.total || 0,
+      };
     },
   },
   {
     name: 'getDistance',
-    description: 'Hitung jarak dari toko ke suatu titik koordinat',
+    description: 'Hitung jarak dari toko ke suatu koordinat dalam kilometer',
     input_schema: {
-      type: 'object' as const,
+      type: 'object',
       properties: {
-        latitude: { type: 'number', description: 'Latitude tujuan' },
-        longitude: { type: 'number', description: 'Longitude tujuan' },
+        latitude: { type: 'number', description: 'Lintang (-90 sampai 90)' },
+        longitude: { type: 'number', description: 'Bujur (-180 sampai 180)' },
       },
       required: ['latitude', 'longitude'],
     },
     async execute(params) {
       const { latitude, longitude } = params;
-      try {
-        const distanceKm = await getDistanceKm(latitude, longitude);
-        return {
-          distance_km: distanceKm,
-          distance_formatted: `${distanceKm} km dari toko`,
-        };
-      } catch (e) {
-        return { error: 'Gagal menghitung jarak. Pastikan koordinat valid.' };
-      }
+      const data = await apiPost('/api/v1/admin/distance', { latitude, longitude });
+      if (data.error) return { error: data.error };
+      return { distance_km: data.distance };
     },
   },
   {
     name: 'calcDeliveryCostAndDriverWage',
-    description:
-      'Hitung biaya pengiriman per transaksi DAN upah driver untuk suatu route. ' +
-      'upah driver = Rp3000/km × total jarak, minimum Rp10.000.',
+    description: 'Hitung biaya pengiriman dan upah driver untuk suatu rute. Total = upah driver (Rp 3.000/km, min Rp 10.000).',
     input_schema: {
-      type: 'object' as const,
+      type: 'object',
       properties: {
-        date: { type: 'string', description: 'Tanggal (YYYY-MM-DD)' },
-        route: { type: 'number', description: 'Nomor route (misal 1.0, 2.0, dll)' },
+        date: { type: 'string', description: 'Tanggal format YYYY-MM-DD' },
+        route: { type: 'number', description: 'Nomor rute (angka)' },
       },
       required: ['date', 'route'],
     },
-    async execute(params, supabase) {
+    async execute(params) {
       const { date, route } = params;
       try {
-        const result = await computeDeliveryCost(date, route, supabase);
+        const result = await computeDeliveryCost(date, route, null as any);
         return {
           distances: result.distances,
           total: formatRupiah(result.total),
           total_raw: result.total,
-          items: result.items.map((i) => ({
+          driver_wage: formatRupiah(result.total),
+          items: result.items.map((i: any) => ({
             transaction_id: i.transaction_id,
             customer_id: i.customer_id,
             distance_km: i.distance_km,
@@ -287,8 +225,7 @@ export const aiTools: AiTool[] = [
           })),
         };
       } catch (e) {
-        const message = e instanceof Error ? e.message : 'Gagal menghitung biaya pengiriman';
-        return { error: message };
+        return { error: e instanceof Error ? e.message : 'Gagal menghitung biaya pengiriman' };
       }
     },
   },
