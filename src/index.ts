@@ -11,6 +11,7 @@ import adminProducts from './routes/admin-products';
 import adminCustomerOptions from './routes/admin-customer-options';
 import adminProductOptions from './routes/admin-product-options';
 import adminTransactions from './routes/admin-transactions';
+import checkout from './routes/checkout';
 import adminCountDeliveryCost from './routes/admin-count-delivery-cost';
 import adminDistance from './routes/admin-distance';
 import myProfile from './routes/my-profile';
@@ -36,9 +37,11 @@ app.use('*', async (c, next) => {
   await next();
 });
 
+app.use('/api/v1/carts/*', requireAuth);
 app.use('/api/v1/addresses/*', requireAuth);
 app.use('/api/v1/admin/*', requireAuth);
 app.use('/api/v1/my-profile/*', requireAuth);
+app.use('/api/v1/checkout/*', requireAuth);
 
 const healthRoute = createRoute({
   method: 'get',
@@ -122,6 +125,7 @@ app.route('/api/v1/admin/product-options', adminProductOptions);
 app.route('/api/v1/admin/count-delivery-cost', adminCountDeliveryCost);
 app.route('/api/v1/admin/distance', adminDistance);
 app.route('/api/v1/my-profile', myProfile);
+app.route('/api/v1/checkout', checkout);
 app.route('/api/v1/ai/chat', aiChat);
 app.route('/telegram/webhook', telegramWebhook);
 

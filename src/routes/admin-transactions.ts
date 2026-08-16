@@ -1,5 +1,6 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { Bindings, Variables } from '../types';
+import { generateInvoice } from '../lib/invoice';
 
 const adminTransactions = new OpenAPIHono<{ Bindings: Bindings; Variables: Variables }>();
 
@@ -94,14 +95,6 @@ const idParamSchema = z.object({
 });
 
 const errorResponse = z.object({ error: z.string() });
-
-function generateInvoice(sequence: number, date: string, prefix: string = 'KEMBANGSELADANG'): string {
-  const dateObj = new Date(date);
-  const day = dateObj.getDate();
-  const month = dateObj.getMonth() + 1;
-  const year = dateObj.getFullYear();
-  return `${sequence}-${day}/${month}/${year}/${prefix}`;
-}
 
 // ---------------------------------------------------------------------------
 // GET / — List transactions with products
@@ -668,6 +661,48 @@ adminTransactions.openapi(
       const { error } = await supabase
         .from('transactions' as any)
         .update({ cost_delivery })
+        .eq('id', id);
+      if (error) return c.json({ error: error.message }, 500);
+
+      return c.json({ success: true });
+    } catch (err) {
+      return c.json({ error: 'Internal server error' }, 500);
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// PATCH /:id/status — Approve or reject a web order
+// ---------------------------------------------------------------------------
+
+adminTransactions.openapi(
+  createRoute({
+    method: 'patch',
+    path: '/{id}/status',
+    tags: ['Admin Transactions'],
+    request: {
+      params: idParamSchema,
+      body: {
+        content: { 'application/json': { schema: z.object({ status: z.enum(['approved', 'rejected']) }) } },
+      },
+    },
+    responses: {
+      200: {
+        description: 'Status updated',
+        content: { 'application/json': { schema: z.object({ success: z.boolean() }) } },
+      },
+      500: { description: 'Server error', content: { 'application/json': { schema: errorResponse } } },
+    },
+  }),
+  async (c) => {
+    try {
+      const supabase = c.get('supabase') as any;
+      const { id } = c.req.valid('param');
+      const { status } = c.req.valid('json');
+
+      const { error } = await supabase
+        .from('transactions' as any)
+        .update({ status })
         .eq('id', id);
       if (error) return c.json({ error: error.message }, 500);
 
