@@ -53,9 +53,55 @@ aiChat.openapi(
       content: m.content,
     }));
 
-    const stream = await runAiAgent(cleanMessages, c.get('supabase'), apiKey);
+    const supabase = c.get('supabase') as any;
+    const userId = c.get('userId');
 
-    return new Response(stream, {
+    const lastUserMessage = cleanMessages[cleanMessages.length - 1];
+    if (lastUserMessage?.role === 'user') {
+      c.executionCtx.waitUntil(
+        supabase.from('ai_chat_messages').insert({
+          user_id: userId,
+          role: 'user',
+          content: lastUserMessage.content,
+        }),
+      );
+    }
+
+    const stream = await runAiAgent(cleanMessages, supabase, apiKey);
+
+    let assistantText = '';
+    const decoder = new TextDecoder();
+    const tap = new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        controller.enqueue(chunk);
+        const text = decoder.decode(chunk, { stream: true });
+        for (const line of text.split('\n')) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith('data:')) continue;
+          try {
+            const event = JSON.parse(trimmed.slice(5).trim());
+            if (event.type === 'delta' && typeof event.text === 'string') {
+              assistantText += event.text;
+            }
+          } catch {
+            // ignore partial/non-JSON SSE lines
+          }
+        }
+      },
+      flush() {
+        if (assistantText) {
+          c.executionCtx.waitUntil(
+            supabase.from('ai_chat_messages').insert({
+              user_id: userId,
+              role: 'assistant',
+              content: assistantText,
+            }),
+          );
+        }
+      },
+    });
+
+    return new Response(stream.pipeThrough(tap), {
       status: 200,
       headers: {
         'Content-Type': 'text/event-stream',
@@ -63,6 +109,89 @@ aiChat.openapi(
         'Connection': 'keep-alive',
       },
     });
+  },
+);
+
+aiChat.openapi(
+  createRoute({
+    method: 'get',
+    path: '/history',
+    tags: ['AI Chat'],
+    responses: {
+      200: {
+        description: 'Chat history for the current user',
+        content: {
+          'application/json': {
+            schema: z.array(
+              z.object({
+                role: z.enum(['user', 'assistant']),
+                content: z.string(),
+                created_at: z.string(),
+              }),
+            ),
+          },
+        },
+      },
+      401: {
+        description: 'Unauthorized',
+        content: { 'application/json': { schema: z.object({ error: z.string() }) } },
+      },
+      500: {
+        description: 'Server error',
+        content: { 'application/json': { schema: z.object({ error: z.string() }) } },
+      },
+    },
+  }),
+  async (c) => {
+    const supabase = c.get('supabase') as any;
+    const userId = c.get('userId');
+
+    const { data, error } = await supabase
+      .from('ai_chat_messages')
+      .select('role, content, created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: true })
+      .limit(100);
+
+    if (error) {
+      return c.json({ error: error.message }, 500);
+    }
+
+    return c.json(data ?? []);
+  },
+);
+
+aiChat.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/history',
+    tags: ['AI Chat'],
+    responses: {
+      200: {
+        description: 'Chat history cleared',
+        content: { 'application/json': { schema: z.object({ success: z.boolean() }) } },
+      },
+      401: {
+        description: 'Unauthorized',
+        content: { 'application/json': { schema: z.object({ error: z.string() }) } },
+      },
+      500: {
+        description: 'Server error',
+        content: { 'application/json': { schema: z.object({ error: z.string() }) } },
+      },
+    },
+  }),
+  async (c) => {
+    const supabase = c.get('supabase') as any;
+    const userId = c.get('userId');
+
+    const { error } = await supabase.from('ai_chat_messages').delete().eq('user_id', userId);
+
+    if (error) {
+      return c.json({ error: error.message }, 500);
+    }
+
+    return c.json({ success: true }, 200);
   },
 );
 
