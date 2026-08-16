@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"cd kembang_cms && rtk git status && echo \\\"---DIFF---\\\" && rtk git diff --stat\",\"description\":\"Check kembang_cms uncommitted changes\"}",
-  "error": "Exit code 1\n(eval):cd:1: no such file or directory: kembang_cms",
-  "timestamp": "2026-08-08T16:29:23.844Z",
-  "retry_count": 2
-}

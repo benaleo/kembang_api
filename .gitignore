@@ -2,3 +2,11 @@ node_modules/
 .wrangler/
 .dev.vars
 dist/
+
+# macOS
+.DS_Store
+
+# agent memory / runtime state (jangan ikut ter-commit)
+.omc/
+.claude/
+
