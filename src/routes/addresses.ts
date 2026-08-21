@@ -1,5 +1,6 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { Bindings, Variables } from '../types';
+import { computeDistance } from '../lib/gomaps';
 
 const addresses = new OpenAPIHono<{ Bindings: Bindings; Variables: Variables }>();
 
@@ -28,6 +29,18 @@ const addressSchema = z.object({
   created_at: z.string(),
   updated_at: z.string(),
 });
+
+const normalizeRecipientGeo = (recipientGeo: z.infer<typeof addressBodySchema>['recipient_geo']) => {
+  if (
+    recipientGeo &&
+    typeof recipientGeo.lat === 'number' &&
+    typeof recipientGeo.lng === 'number'
+  ) {
+    return { lat: recipientGeo.lat, lng: recipientGeo.lng };
+  }
+
+  return null;
+};
 
 // GET - List user's addresses
 addresses.openapi(
@@ -91,12 +104,13 @@ addresses.openapi(
     const body = c.req.valid('json');
     const supabase = c.get('supabase');
 
-    const { data: customer } = await supabase
+    const { data: customerRow } = await supabase
       .from('customers')
       .select('id')
       .eq('user_id', userId)
       .limit(1)
       .single();
+    const customer = customerRow as { id: number } | null;
 
     // first address auto-default
     const { count } = await supabase
@@ -105,8 +119,7 @@ addresses.openapi(
       .eq('user_id', userId);
     const isDefault = count === 0 ? true : (body.is_default ?? false);
 
-    const { data, error } = await supabase
-      .from('customer_addresses')
+    const { data, error } = await (supabase.from('customer_addresses') as any)
       .insert([{ ...body, user_id: userId, customer_id: customer?.id ?? null, recipient_distances: 0, is_default: isDefault }])
       .select()
       .single();
@@ -158,30 +171,42 @@ addresses.openapi(
 
     const { data: existing } = await supabase
       .from('customer_addresses')
-      .select('user_id')
+      .select('user_id, recipient_distances')
       .eq('id', id)
       .single();
 
-    if (!existing) {
+    const currentAddress = existing as { user_id: string | null; recipient_distances: number | null } | null;
+
+    if (!currentAddress) {
       return c.json({ error: 'Address not found' }, 404);
     }
 
-    if (existing.user_id !== userId) {
+    if (currentAddress.user_id !== userId) {
       return c.json({ error: 'Forbidden' }, 403);
     }
 
+    const shouldRecomputeDistance =
+      body.recipient_address !== undefined || body.recipient_geo !== undefined;
+    const recipientDistances = shouldRecomputeDistance
+      ? await computeDistance({
+          recipient_address: body.recipient_address ?? null,
+          recipient_geo: normalizeRecipientGeo(body.recipient_geo),
+        })
+      : currentAddress.recipient_distances ?? 0;
+    const updateBody = shouldRecomputeDistance
+      ? { ...body, recipient_distances: recipientDistances }
+      : body;
+
     // if setting this address as default, reset all others first
     if (body.is_default) {
-      await supabase
-        .from('customer_addresses')
+      await (supabase.from('customer_addresses') as any)
         .update({ is_default: false })
         .eq('user_id', userId)
         .neq('id', id);
     }
 
-    const { data, error } = await supabase
-      .from('customer_addresses')
-      .update(body)
+    const { data, error } = await (supabase.from('customer_addresses') as any)
+      .update(updateBody)
       .eq('id', id)
       .select()
       .single();
@@ -233,16 +258,17 @@ addresses.openapi(
       .eq('id', id)
       .single();
 
-    if (!existing) {
+    const currentAddress = existing as { user_id: string | null } | null;
+
+    if (!currentAddress) {
       return c.json({ error: 'Address not found' }, 404);
     }
 
-    if (existing.user_id !== userId) {
+    if (currentAddress.user_id !== userId) {
       return c.json({ error: 'Forbidden' }, 403);
     }
 
-    const { error } = await supabase
-      .from('customer_addresses')
+    const { error } = await (supabase.from('customer_addresses') as any)
       .delete()
       .eq('id', id);
 

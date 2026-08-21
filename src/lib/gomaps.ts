@@ -3,24 +3,67 @@
 // No API key needed — uses free public OSRM server
 
 const ORIGIN = { lat: -6.2928633, lng: 106.7548264 };
-const OSRM_BASE = 'https://router.project-osrm.org/route/v1/driving';
+const OSRM_BASES = [
+  'https://router.project-osrm.org/route/v1/driving',
+  'https://routing.openstreetmap.de/routed-car/route/v1/driving',
+];
+const ROUTE_FACTOR = 1.35;
+
+function getFallbackDistanceKm(destLat: number, destLng: number): number {
+  const earthRadiusKm = 6371;
+  const toRad = (degree: number) => (degree * Math.PI) / 180;
+  const deltaLat = toRad(destLat - ORIGIN.lat);
+  const deltaLng = toRad(destLng - ORIGIN.lng);
+  const originLat = toRad(ORIGIN.lat);
+  const targetLat = toRad(destLat);
+  const haversine =
+    Math.sin(deltaLat / 2) ** 2 +
+    Math.cos(originLat) * Math.cos(targetLat) * Math.sin(deltaLng / 2) ** 2;
+  const straightDistanceKm = earthRadiusKm * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+  return Math.round(straightDistanceKm * ROUTE_FACTOR * 100) / 100;
+}
 
 /**
  * Hitung jarak jalan (km) dari toko ke koordinat tujuan via OSRM.
  */
 export async function getDistanceKm(destLat: number, destLng: number): Promise<number> {
-  const url = `${OSRM_BASE}/${ORIGIN.lng},${ORIGIN.lat};${destLng},${destLat}?overview=false`;
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`OSRM HTTP error: ${response.status}`);
-  const data = (await response.json()) as {
-    code: string;
-    routes: Array<{ distance: number }>;
-  };
-  if (data.code !== 'Ok' || !data.routes?.[0]) {
-    throw new Error(`OSRM routing failed: ${data.code || 'no routes'}`);
+  const errors: string[] = [];
+
+  for (const osrmBase of OSRM_BASES) {
+    const url = `${osrmBase}/${ORIGIN.lng},${ORIGIN.lat};${destLng},${destLat}?overview=false`;
+
+    try {
+      const response = await fetch(url, {
+        headers: {
+          Accept: 'application/json',
+          'User-Agent': 'kembang-api/1.0',
+        },
+      });
+
+      if (!response.ok) {
+        errors.push(`${osrmBase}: HTTP ${response.status}`);
+        continue;
+      }
+
+      const data = (await response.json()) as {
+        code: string;
+        routes: Array<{ distance: number }>;
+      };
+      if (data.code !== 'Ok' || !data.routes?.[0]) {
+        errors.push(`${osrmBase}: ${data.code || 'no routes'}`);
+        continue;
+      }
+
+      const meters = data.routes[0].distance;
+      return Math.round((meters / 1000) * 100) / 100;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'unknown error';
+      errors.push(`${osrmBase}: ${message}`);
+    }
   }
-  const meters = data.routes[0].distance;
-  return Math.round((meters / 1000) * 100) / 100;
+
+  console.warn(`OSRM unavailable, using fallback distance: ${errors.join('; ')}`);
+  return getFallbackDistanceKm(destLat, destLng);
 }
 
 /**
