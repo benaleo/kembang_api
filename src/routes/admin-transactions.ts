@@ -86,8 +86,10 @@ const listQuerySchema = z.object({
   end_date: z.string().optional(),
   date: z.string().optional(),
   page: z.coerce.number().int().min(1).default(1),
+  page_size: z.coerce.number().int().min(1).max(200).default(20),
   search: z.string().optional(),
   template: z.enum(['true', 'false']).optional(),
+  status: z.enum(['pending', 'approved', 'rejected']).optional(),
 });
 
 const idParamSchema = z.object({
@@ -95,11 +97,51 @@ const idParamSchema = z.object({
 });
 
 const errorResponse = z.object({ error: z.string() });
+function formatTransactionIndex(transaction: any) {
+  const customer = Array.isArray(transaction.customer) ? transaction.customer[0] : transaction.customer;
+  const products = transaction.transaction_products || [];
+
+  return {
+    id: transaction.id,
+    date: transaction.date,
+    invoice: transaction.invoice,
+    created_at: transaction.created_at ?? null,
+    customer_id: transaction.customer_id,
+    customer_name: transaction.customer_name || customer?.name || '',
+    customer_registered_name: customer?.name || null,
+    customer_address: transaction.customer_address || customer?.address || '',
+    customer_address_note: customer?.address_note || '',
+    customer_phone: transaction.customer_phone || customer?.phone || '',
+    customer_place: customer?.place || '',
+    customer_distance: transaction.customer_distances ?? customer?.distance ?? 0,
+    customer_distances: transaction.customer_distances ?? null,
+    customer_address_detail: transaction.customer_address_detail ?? null,
+    customer_geo: transaction.customer_geo ?? null,
+    name_alter: transaction.name_alter || '',
+    note: transaction.note || '',
+    note_route: transaction.note_route || '',
+    route: transaction.route || 0,
+    billed_at: transaction.billed_at || null,
+    cost_delivery: transaction.cost_delivery || 0,
+    is_web_order: transaction.is_web_order ?? false,
+    status: transaction.status ?? 'approved',
+    products: products.map((tp: any) => ({
+      id: tp.id,
+      product_id: tp.product_id,
+      product: tp.product?.name || 'Unknown Product',
+      price: tp.product?.price || 0,
+      qty: tp.qty || 0,
+      parent_id: tp.parent_id || null,
+      is_free: tp.is_free ?? false,
+    })),
+    total: products.reduce((sum: number, tp: any) => sum + (tp.qty || 0) * (tp.product?.price || 0), 0),
+  };
+}
+
 
 // ---------------------------------------------------------------------------
 // GET / — List transactions with products
 // ---------------------------------------------------------------------------
-
 adminTransactions.openapi(
   createRoute({
     method: 'get',
@@ -121,27 +163,25 @@ adminTransactions.openapi(
   async (c) => {
     try {
       const supabase = c.get('supabase') as any;
-      const { start_date, end_date, date, page, search, template } = c.req.valid('query');
-
-      const pageSize = 20;
-      const from = (page - 1) * pageSize;
-      const to = from + pageSize - 1;
+      const { start_date, end_date, date, page, page_size, search, template, status } = c.req.valid('query');
+      const from = (page - 1) * page_size;
+      const to = from + page_size - 1;
 
       let query = supabase
         .from('transactions' as any)
         .select(
-          `id, date, invoice, customer_id, customer_name, customer_phone, customer_address, customer_address_detail, customer_geo, customer_distances, name_alter, note, note_route, route, cost_delivery, cost_order, billed_at, template_id, created_at, updated_at,
+          `id, date, invoice, customer_id, customer_name, customer_phone, customer_address, customer_address_detail, customer_geo, customer_distances, name_alter, note, note_route, route, cost_delivery, cost_order, billed_at, template_id, created_at, updated_at, is_web_order, status,
+          customer:customers (name, address, address_note, distance, phone, place),
           transaction_products (id, product_id, qty, parent_id, is_free, product:products (id, name, price))`,
           { count: 'exact' },
         )
-        .order('route', { ascending: true })
-        .order('updated_at', { ascending: false })
         .range(from, to);
 
       if (date) {
         query = query.eq('date', date);
-      } else if (start_date && end_date) {
-        query = query.gte('date', start_date).lte('date', end_date);
+      } else {
+        if (start_date) query = query.gte('date', start_date);
+        if (end_date) query = query.lte('date', end_date);
       }
 
       if (search) {
@@ -149,33 +189,314 @@ adminTransactions.openapi(
         query = query.or(`customer_name.ilike.%${safe}%,invoice.ilike.%${safe}%,name_alter.ilike.%${safe}%`);
       }
 
-      if (template !== 'true') {
+      if (status) {
+        query = query.eq('status', status);
+      } else if (template !== 'true') {
+        query = query.eq('status', 'approved');
+      }
+
+      if (template === 'true') {
+        query = query.not('template_id', 'is', null);
+      } else {
         query = query.is('template_id', null);
       }
 
-      const { data, error, count } = await query;
-
-      if (error) {
-        return c.json({ error: error.message }, 500);
+      if (start_date && end_date && !date && !status) {
+        query = query.order('date', { ascending: false });
+      } else {
+        query = query.order('route', { ascending: true }).order('updated_at', { ascending: false });
       }
 
-      const transactions = (data || []).map((t: any) => {
-        const { transaction_products, ...rest } = t;
-        return {
-          ...rest,
-          products: (transaction_products || []).map((tp: any) => ({
-            id: tp.id,
-            product_id: tp.product_id,
-            qty: tp.qty,
-            parent_id: tp.parent_id,
-            is_free: tp.is_free,
-            product: tp.product?.name || 'Unknown Product',
-            price: tp.product?.price || 0,
-          })),
-        };
-      });
+      const { data, error, count } = await query;
+      if (error) return c.json({ error: error.message }, 500);
 
-      return c.json({ data: transactions, total: count ?? 0 });
+      return c.json({ data: (data || []).map(formatTransactionIndex), total: count ?? 0 });
+    } catch (err) {
+      return c.json({ error: 'Internal server error' }, 500);
+    }
+  },
+);
+
+// GET /calendar — Current month unbilled transactions grouped by date
+// ---------------------------------------------------------------------------
+adminTransactions.openapi(
+  createRoute({
+    method: 'get',
+    path: '/calendar',
+    tags: ['Admin Transactions'],
+    responses: {
+      200: {
+        description: 'Calendar transactions',
+        content: {
+          'application/json': {
+            schema: z.object({ data: z.array(z.any()) }),
+          },
+        },
+      },
+      500: { description: 'Server error', content: { 'application/json': { schema: errorResponse } } },
+    },
+  }),
+  async (c) => {
+    try {
+      const supabase = c.get('supabase') as any;
+      const now = new Date();
+      const startDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+      const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString();
+
+      const { data, error } = await supabase
+        .from('transactions' as any)
+        .select('date, billed_at, customer:customers!inner (name)')
+        .gte('date', startDate)
+        .lte('date', endDate)
+        .is('billed_at', null)
+        .is('template_id', null)
+        .order('date', { ascending: false });
+
+      if (error) return c.json({ error: error.message }, 500);
+
+      const grouped = new Map<string, { date: string; billed_at: string | null; transactions: { customer_name: string[] } }>();
+      for (const transaction of data || []) {
+        const date = transaction.date;
+        const customer = Array.isArray(transaction.customer) ? transaction.customer[0] : transaction.customer;
+        const customerName = customer?.name;
+        if (!date || !customerName) continue;
+
+        if (!grouped.has(date)) {
+          grouped.set(date, { date, billed_at: transaction.billed_at || null, transactions: { customer_name: [] } });
+        }
+
+        const names = grouped.get(date)!.transactions.customer_name;
+        if (names.length < 3) names.push(customerName);
+      }
+
+      return c.json({ data: Array.from(grouped.values()) });
+    } catch (err) {
+      return c.json({ error: 'Internal server error' }, 500);
+    }
+  },
+);
+
+
+// ---------------------------------------------------------------------------
+// GET /templates — List transaction templates
+// ---------------------------------------------------------------------------
+adminTransactions.openapi(
+  createRoute({
+    method: 'get',
+    path: '/templates',
+    tags: ['Admin Transactions'],
+    responses: {
+      200: {
+        description: 'Transaction templates',
+        content: { 'application/json': { schema: z.array(z.any()) } },
+      },
+      500: { description: 'Server error', content: { 'application/json': { schema: errorResponse } } },
+    },
+  }),
+  async (c) => {
+    try {
+      const supabase = c.get('supabase') as any;
+      const { data, error } = await supabase
+        .from('transaction_templates' as any)
+        .select('*')
+        .order('created_at', { ascending: true });
+
+      if (error) return c.json({ error: error.message }, 500);
+      return c.json(data || []);
+    } catch (err) {
+      return c.json({ error: 'Internal server error' }, 500);
+    }
+  },
+);
+
+const templateIdParamSchema = z.object({
+  templateId: z.string().openapi({ param: { name: 'templateId', in: 'path', required: true }, example: '1' }),
+});
+
+// ---------------------------------------------------------------------------
+// GET /templates/:templateId/preview — Preview transactions inside a template
+// ---------------------------------------------------------------------------
+adminTransactions.openapi(
+  createRoute({
+    method: 'get',
+    path: '/templates/{templateId}/preview',
+    tags: ['Admin Transactions'],
+    request: { params: templateIdParamSchema },
+    responses: {
+      200: {
+        description: 'Template import preview rows',
+        content: { 'application/json': { schema: z.array(z.any()) } },
+      },
+      500: { description: 'Server error', content: { 'application/json': { schema: errorResponse } } },
+    },
+  }),
+  async (c) => {
+    try {
+      const supabase = c.get('supabase') as any;
+      const templateId = Number(c.req.valid('param').templateId);
+
+      const { data: templateTransactions, error } = await supabase
+        .from('transactions' as any)
+        .select(
+          `*,
+          transaction_products(
+            *,
+            product:products(name)
+          )`,
+        )
+        .eq('template_id', templateId)
+        .order('route', { ascending: true });
+
+      if (error) return c.json({ error: error.message }, 500);
+      if (!templateTransactions?.length) return c.json([]);
+
+      const customerIds = Array.from(
+        new Set(
+          templateTransactions
+            .map((transaction: any) => transaction.customer_id)
+            .filter(Boolean),
+        ),
+      );
+
+      const lastOrderByCustomerId = new Map<number, string>();
+
+      if (customerIds.length) {
+        const { data: lastOrders, error: lastOrderError } = await supabase
+          .from('transactions' as any)
+          .select('customer_id, date')
+          .in('customer_id', customerIds)
+          .is('template_id', null)
+          .order('date', { ascending: false });
+
+        if (lastOrderError) return c.json({ error: lastOrderError.message }, 500);
+
+        for (const order of lastOrders || []) {
+          if (order.customer_id && order.date && !lastOrderByCustomerId.has(order.customer_id)) {
+            lastOrderByCustomerId.set(order.customer_id, order.date);
+          }
+        }
+      }
+
+      return c.json(
+        (templateTransactions || []).map((transaction: any) => ({
+          ...transaction,
+          last_order_date: lastOrderByCustomerId.get(transaction.customer_id) ?? null,
+          product_summary: (transaction.transaction_products || [])
+            .map((product: any) => `${product.qty || 0}x ${product.product?.name || 'Unknown Product'}`)
+            .join(', '),
+        })),
+      );
+    } catch (err) {
+      return c.json({ error: 'Internal server error' }, 500);
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// POST /templates/:templateId/import — Import selected template transactions
+// ---------------------------------------------------------------------------
+adminTransactions.openapi(
+  createRoute({
+    method: 'post',
+    path: '/templates/{templateId}/import',
+    tags: ['Admin Transactions'],
+    request: {
+      params: templateIdParamSchema,
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({
+              target_date: z.string(),
+              selected_transaction_ids: z.array(z.number()).optional(),
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: 'Imported transactions',
+        content: { 'application/json': { schema: z.array(z.any()) } },
+      },
+      400: { description: 'Invalid request', content: { 'application/json': { schema: errorResponse } } },
+      404: { description: 'Template transactions not found', content: { 'application/json': { schema: errorResponse } } },
+      500: { description: 'Server error', content: { 'application/json': { schema: errorResponse } } },
+    },
+  }),
+  async (c) => {
+    try {
+      const supabase = c.get('supabase') as any;
+      const templateId = Number(c.req.valid('param').templateId);
+      const { target_date, selected_transaction_ids } = c.req.valid('json');
+
+      if (selected_transaction_ids && selected_transaction_ids.length === 0) {
+        return c.json({ error: 'No transactions selected' }, 400);
+      }
+
+      let query = supabase
+        .from('transactions' as any)
+        .select('*, transaction_products(*)')
+        .eq('template_id', templateId)
+        .order('route', { ascending: true });
+
+      if (selected_transaction_ids) {
+        query = query.in('id', selected_transaction_ids);
+      }
+
+      const { data: templateTransactions, error: fetchError } = await query;
+      if (fetchError) return c.json({ error: fetchError.message }, 500);
+      if (!templateTransactions?.length) return c.json({ error: 'No transactions found in template' }, 404);
+
+      const insertedTransactions = [];
+
+      for (const templateTransaction of templateTransactions) {
+        const { id, created_at, updated_at, transaction_products, ...transactionData } = templateTransaction;
+        const { data: sequenceData, error: sequenceError } = await supabase
+          .from('transaction_sequence_view' as any)
+          .select('max_sequence')
+          .single();
+
+        if (sequenceError) return c.json({ error: sequenceError.message }, 500);
+
+        const sequence = sequenceData?.max_sequence ? sequenceData.max_sequence + 1 : 1;
+        const invoice = generateInvoice(sequence, target_date, 'KEMBANGSELADANG');
+
+        const { data: insertedTransaction, error: insertError } = await supabase
+          .from('transactions' as any)
+          .insert({
+            ...transactionData,
+            template_id: null,
+            date: target_date,
+            invoice,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .select()
+          .single();
+
+        if (insertError) return c.json({ error: insertError.message }, 500);
+
+        if (transaction_products?.length) {
+          const newProducts = transaction_products.map((product: any) => {
+            const { id: productId, transaction_id, ts, ...productData } = product;
+            return {
+              ...productData,
+              transaction_id: insertedTransaction.id,
+              ts: new Date().toISOString(),
+            };
+          });
+
+          const { error: productError } = await supabase
+            .from('transaction_products' as any)
+            .insert(newProducts);
+
+          if (productError) return c.json({ error: productError.message }, 500);
+        }
+
+        insertedTransactions.push(insertedTransaction);
+      }
+
+      return c.json(insertedTransactions);
     } catch (err) {
       return c.json({ error: 'Internal server error' }, 500);
     }
