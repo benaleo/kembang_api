@@ -25,7 +25,6 @@ import adminAiModels from './routes/admin-ai-models';
 import adminNotes from './routes/admin-notes';
 import adminTransactionTemplates from './routes/admin-transaction-templates';
 import telegramWebhook from './routes/telegram-webhook';
-import internalResetPassword from './routes/internal-reset-password';
 import { requireAuth } from './middleware/auth';
 import { Bindings, Variables } from './types';
 
@@ -152,7 +151,6 @@ app.route('/api/v1/order-history', orderHistory);
 app.route('/api/v1/invoice', invoice);
 app.route('/api/v1/checkout', checkout);
 app.route('/api/v1/ai/chat', aiChat);
-app.route('/internal', internalResetPassword);
 app.route('/telegram/webhook', telegramWebhook);
 
 app.doc('/openapi.json', {
