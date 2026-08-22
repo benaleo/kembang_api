@@ -19,6 +19,7 @@ const productSchema = z.object({
   price_now: z.number().nullable(),
   image_url: z.string(),
   category: z.string().nullable(),
+  is_combine: z.boolean(),
 });
 
 products.openapi(
@@ -49,7 +50,7 @@ products.openapi(
 
     let q = supabase
       .from('products')
-      .select('id, name, price, price_now, image_url, category')
+      .select('id, name, price, price_now, image_url, category, is_combine')
       .eq('is_active', true);
 
     if (category) q = q.eq('category', category);
@@ -71,6 +72,7 @@ products.openapi(
       price_now: row.price_now,
       image_url: row.image_url ?? `${origin}/default.webp`,
       category: row.category,
+      is_combine: row.is_combine,
     }));
 
     return c.json(result, 200);

@@ -28,7 +28,9 @@ Deploy: `npm run deploy` (wrangler deploy) — perlu `wrangler login` dan secret
 
 ## Supabase — Shared Project
 
-Project yang sama dipakai `kembang_cms` dan `kembang_web`. Service ini pakai **service role key** (bypass RLS) karena authorization dihandle manual di kode Hono, bukan lewat Postgres RLS policy. Migration schema: lihat `kembang_cms/supabase/migrations/` (source of truth) atau mirror di `../supabase-schema/migrations/`.
+Project yang sama dipakai `kembang_cms` dan `kembang_web`. Service ini pakai **service role key** (bypass RLS) karena authorization dihandle manual di kode Hono, bukan lewat Postgres RLS policy. Migration schema: root `kembang/supabase/migrations/` (source of truth) — **JANGAN** taruh migration baru di `kembang_cms/supabase/migrations/`, folder itu sudah diverged/bukan mirror.
+
+Local dev pakai **local Supabase** (self-hosted via Supabase CLI, Docker), bukan project cloud/prod.
 
 ## Kandidat Migrasi
 

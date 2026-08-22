@@ -7,6 +7,7 @@ export type Bindings = {
   TELEGRAM_BOT_TOKEN: string;
   TELEGRAM_ALLOWED_CHAT_IDS: string;
   AI_SESSIONS: any; // KVNamespace
+  INVOICE_SECRET_KEY: string;
 };
 
 export type Variables = {

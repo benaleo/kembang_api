@@ -117,18 +117,28 @@ aiChat.openapi(
     method: 'get',
     path: '/history',
     tags: ['AI Chat'],
+    request: {
+      query: z.object({
+        limit: z.coerce.number().int().min(1).max(50).optional().default(5),
+        before: z.coerce.number().int().optional(),
+      }),
+    },
     responses: {
       200: {
         description: 'Chat history for the current user',
         content: {
           'application/json': {
-            schema: z.array(
-              z.object({
-                role: z.enum(['user', 'assistant']),
-                content: z.string(),
-                created_at: z.string(),
-              }),
-            ),
+            schema: z.object({
+              data: z.array(
+                z.object({
+                  id: z.number(),
+                  role: z.enum(['user', 'assistant']),
+                  content: z.string(),
+                  created_at: z.string(),
+                }),
+              ),
+              hasMore: z.boolean(),
+            }),
           },
         },
       },
@@ -145,19 +155,27 @@ aiChat.openapi(
   async (c) => {
     const supabase = c.get('supabase') as any;
     const userId = c.get('userId');
+    const { limit, before } = c.req.valid('query');
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('ai_chat_messages')
-      .select('role, content, created_at')
+      .select('id, role, content, created_at')
       .eq('user_id', userId)
-      .order('created_at', { ascending: true })
-      .limit(100);
+      .order('id', { ascending: false })
+      .limit(limit + 1);
+
+    if (before) query = query.lt('id', before);
+
+    const { data, error } = await query;
 
     if (error) {
       return c.json({ error: error.message }, 500);
     }
 
-    return c.json(data ?? []);
+    const rows = data ?? [];
+    const hasMore = rows.length > limit;
+
+    return c.json({ data: rows.slice(0, limit).reverse(), hasMore });
   },
 );
 

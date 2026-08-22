@@ -1,6 +1,7 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { Bindings, Variables } from '../types';
 import { generateInvoice } from '../lib/invoice';
+import { getDistanceKm } from '../lib/gomaps';
 
 const checkout = new OpenAPIHono<{ Bindings: Bindings; Variables: Variables }>();
 
@@ -36,6 +37,9 @@ const checkoutBodySchema = z.object({
   recipient_geo: z.object({ lat: z.number(), lng: z.number() }).nullable().optional(),
   note: z.string(),
   products: z.array(checkoutProductSchema),
+  delivery_date: z.string(),
+  delivery_time_slot: z.enum(['06:00-07:00', '07:00-09:00', '09:00-12:00', 'above-12:00', 'manual']),
+  delivery_time_manual: z.string().nullable().optional(),
 });
 
 const transactionProductNodeSchema = z.object({
@@ -108,6 +112,10 @@ checkout.openapi(
       const userId = c.get('userId');
       const body = c.req.valid('json');
 
+      if (body.delivery_time_slot === 'manual' && !body.delivery_time_manual) {
+        return c.json({ error: 'delivery_time_manual wajib diisi untuk slot manual' }, 400);
+      }
+
       // 1. Resolve customer_id from userId
       let customerId: number;
       const { data: existingCustomer } = await supabase
@@ -136,6 +144,7 @@ checkout.openapi(
       let recipientAddressDetail: string | null = null;
       let recipientGeo: { lat: number; lng: number } | null = null;
       let recipientDistances: number | null = null;
+      let usedInlineAddress = false;
 
       if (body.address_id) {
         const { data: address, error: addressError } = await supabase
@@ -160,10 +169,47 @@ checkout.openapi(
         recipientAddress = body.recipient_address;
         recipientAddressDetail = body.recipient_address_detail ?? null;
         recipientGeo = body.recipient_geo ?? null;
+        usedInlineAddress = true;
+      }
+
+      if (recipientGeo?.lat !== undefined && recipientGeo?.lng !== undefined) {
+        try {
+          recipientDistances = await getDistanceKm(recipientGeo.lat, recipientGeo.lng);
+        } catch (err) {
+          console.error('Failed to compute distance via OSRM:', err);
+        }
+      }
+
+      // 2b. Best-effort: persist inline address to customer_addresses
+      if (usedInlineAddress && recipientName && recipientPhone && recipientAddress) {
+        try {
+          const { count } = await supabase
+            .from('customer_addresses')
+            .select('id', { count: 'exact', head: true })
+            .eq('user_id', userId);
+          const isDefault = count === 0;
+
+          await supabase.from('customer_addresses').insert([
+            {
+              user_id: userId,
+              customer_id: customerId,
+              label: null,
+              recipient_name: recipientName,
+              recipient_phone: recipientPhone,
+              recipient_address: recipientAddress,
+              recipient_address_detail: recipientAddressDetail,
+              recipient_geo: recipientGeo ?? null,
+              recipient_distances: recipientDistances ?? 0,
+              is_default: isDefault,
+            },
+          ]);
+        } catch (err) {
+          console.error('Failed to persist inline address to customer_addresses:', err);
+        }
       }
 
       // 3. Generate invoice from sequence view
-      const date = new Date().toISOString().slice(0, 10);
+      const date = body.delivery_date;
       const { data: sequenceData, error: seqError } = await supabase
         .from('transaction_sequence_view' as any)
         .select('max_sequence')
@@ -172,6 +218,7 @@ checkout.openapi(
       const maxSeq = (sequenceData as any)?.max_sequence;
       const sequence = maxSeq ? maxSeq + 1 : 1;
       const invoice = generateInvoice(sequence, date, 'KEMBANGSELADANG');
+      const deliverySurcharge = body.delivery_time_slot === '06:00-07:00' ? 3000 : 0;
 
       // 4. Insert transaction
       const { data: createdTransaction, error: txError } = (await supabase
@@ -195,6 +242,9 @@ checkout.openapi(
             invoice,
             is_web_order: true,
             status: 'pending',
+            delivery_time_slot: body.delivery_time_slot,
+            delivery_time_manual: body.delivery_time_slot === 'manual' ? body.delivery_time_manual : null,
+            delivery_surcharge: deliverySurcharge,
           },
         ])
         .select()
@@ -265,7 +315,7 @@ checkout.openapi(
         const cost_order = billableItems.reduce((total, item) => {
           const pd = productData?.find((p: any) => p.id === item.product_id);
           return total + (pd?.price || 0) * item.qty;
-        }, 0);
+        }, deliverySurcharge);
         if (cost_order !== 0) {
           await (supabase.from('transactions') as any).update({ cost_order }).eq('id', createdTransaction.id);
         }

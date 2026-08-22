@@ -15,6 +15,8 @@ import checkout from './routes/checkout';
 import adminCountDeliveryCost from './routes/admin-count-delivery-cost';
 import adminDistance from './routes/admin-distance';
 import myProfile from './routes/my-profile';
+import orderHistory from './routes/order-history';
+import invoice from './routes/invoice';
 import aiChat from './routes/ai-chat';
 import telegramWebhook from './routes/telegram-webhook';
 import { requireAuth } from './middleware/auth';
@@ -41,6 +43,7 @@ app.use('/api/v1/carts/*', requireAuth);
 app.use('/api/v1/addresses/*', requireAuth);
 app.use('/api/v1/admin/*', requireAuth);
 app.use('/api/v1/my-profile/*', requireAuth);
+app.use('/api/v1/order-history/*', requireAuth);
 app.use('/api/v1/checkout/*', requireAuth);
 
 const healthRoute = createRoute({
@@ -125,6 +128,8 @@ app.route('/api/v1/admin/product-options', adminProductOptions);
 app.route('/api/v1/admin/count-delivery-cost', adminCountDeliveryCost);
 app.route('/api/v1/admin/distance', adminDistance);
 app.route('/api/v1/my-profile', myProfile);
+app.route('/api/v1/order-history', orderHistory);
+app.route('/api/v1/invoice', invoice);
 app.route('/api/v1/checkout', checkout);
 app.route('/api/v1/ai/chat', aiChat);
 app.route('/telegram/webhook', telegramWebhook);
