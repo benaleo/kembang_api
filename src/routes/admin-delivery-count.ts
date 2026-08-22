@@ -40,7 +40,7 @@ adminDeliveryCount.openapi(
     return c.json({
       message: 'TODO: GET /delivery-count',
       params: { start_date: startDate, end_date: endDate },
-    });
+    }, 200);
   },
 );
 

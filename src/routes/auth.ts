@@ -52,7 +52,7 @@ auth.openapi(
       return c.json({ error: error.message }, 401);
     }
 
-    return c.json({ user: data.user, session: data.session });
+    return c.json({ user: data.user, session: data.session }, 200);
   },
 );
 
@@ -84,7 +84,7 @@ auth.openapi(
       return c.json({ error: error.message }, 400);
     }
 
-    return c.json({ user: data.user, session: data.session });
+    return c.json({ user: data.user, session: data.session }, 200);
   },
 );
 

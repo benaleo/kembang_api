@@ -73,7 +73,7 @@ addresses.openapi(
       return c.json({ error: error.message }, 500);
     }
 
-    return c.json(data);
+    return c.json(data, 200);
   }
 );
 
@@ -215,7 +215,7 @@ addresses.openapi(
       return c.json({ error: error.message }, 500);
     }
 
-    return c.json(data);
+    return c.json(data, 200);
   }
 );
 
@@ -276,7 +276,7 @@ addresses.openapi(
       return c.json({ error: error.message }, 500);
     }
 
-    return c.json({ message: 'Address deleted' });
+    return c.json({ message: 'Address deleted' }, 200);
   }
 );
 

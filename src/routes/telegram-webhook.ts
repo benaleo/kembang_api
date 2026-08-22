@@ -42,7 +42,7 @@ telegramWebhook.openapi(
       const botToken = c.env.TELEGRAM_BOT_TOKEN;
       if (!botToken) {
         console.error('TELEGRAM_BOT_TOKEN is not configured');
-        return c.json({ ok: true as const });
+        return c.json({ ok: true as const }, 200);
       }
 
       const allowedChatIds = c.env.TELEGRAM_ALLOWED_CHAT_IDS
@@ -55,14 +55,14 @@ telegramWebhook.openapi(
       const update = c.req.valid('json');
 
       if (!update.message?.text) {
-        return c.json({ ok: true as const });
+        return c.json({ ok: true as const }, 200);
       }
 
       const chatId = update.message.chat.id;
 
       if (allowedChatIds.length > 0 && !allowedChatIds.includes(chatId)) {
         await sendMessage(botToken, chatId, 'Maaf, Anda tidak diizinkan mengakses bot ini.');
-        return c.json({ ok: true as const });
+        return c.json({ ok: true as const }, 200);
       }
 
       const userText = update.message.text;
@@ -71,7 +71,7 @@ telegramWebhook.openapi(
 
       if (!apiKey) {
         await sendMessage(botToken, chatId, 'Error: OMNIROUTER_API_KEY belum dikonfigurasi.');
-        return c.json({ ok: true as const });
+        return c.json({ ok: true as const }, 200);
       }
 
       // Fetch session from KV
@@ -138,10 +138,10 @@ telegramWebhook.openapi(
         });
       }
 
-      return c.json({ ok: true as const });
+      return c.json({ ok: true as const }, 200);
     } catch (err) {
       console.error('Telegram webhook error:', err);
-      return c.json({ ok: true as const });
+      return c.json({ ok: true as const }, 200);
     }
   },
 );

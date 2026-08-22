@@ -65,7 +65,7 @@ carts.openapi(
       product: row.products ?? null,
     }));
 
-    return c.json(items);
+    return c.json(items, 200);
   }
 );
 
@@ -253,7 +253,7 @@ carts.openapi(
         return c.json({ error: error.message }, 500);
       }
 
-      return c.json({ message: 'Item removed from cart' });
+      return c.json({ message: 'Item removed from cart' }, 200);
     }
 
     const { data, error } = await supabase
@@ -268,7 +268,7 @@ carts.openapi(
       return c.json({ error: error.message }, 500);
     }
 
-    return c.json(data);
+    return c.json(data, 200);
   }
 );
 
@@ -313,7 +313,7 @@ carts.openapi(
       return c.json({ error: error.message }, 500);
     }
 
-    return c.json({ message: 'Item removed from cart' });
+    return c.json({ message: 'Item removed from cart' }, 200);
   }
 );
 
@@ -351,7 +351,7 @@ carts.openapi(
       return c.json({ error: error.message }, 500);
     }
 
-    return c.json({ message: 'Cart cleared' });
+    return c.json({ message: 'Cart cleared' }, 200);
   }
 );
 

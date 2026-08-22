@@ -86,7 +86,7 @@ orderHistory.openapi(
         .maybeSingle();
 
       if (!customer?.id) {
-        return c.json({ data: [], total: 0, page, pageSize, totalPages: 0 });
+        return c.json({ data: [], total: 0, page, pageSize, totalPages: 0 }, 200);
       }
 
       let query = supabase
@@ -126,7 +126,7 @@ orderHistory.openapi(
       );
 
       const total = count ?? 0;
-      return c.json({ data: orders, total, page, pageSize, totalPages: Math.ceil(total / pageSize) });
+      return c.json({ data: orders, total, page, pageSize, totalPages: Math.ceil(total / pageSize) }, 200);
     } catch (err) {
       return c.json({ error: 'Internal server error' }, 500);
     }

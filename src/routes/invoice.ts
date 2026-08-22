@@ -104,7 +104,7 @@ invoice.openapi(
           billed_at: t.billed_at || null,
           products: nestProducts(t.transaction_products || []),
         },
-      });
+      }, 200);
     } catch (err) {
       return c.json({ error: 'Internal server error' }, 500);
     }

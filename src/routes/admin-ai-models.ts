@@ -62,7 +62,7 @@ adminAiModels.openapi(
       const { data, error, count } = await query;
       if (error) return c.json({ error: error.message }, 500);
 
-      return c.json({ data: data || [], total: count ?? 0 });
+      return c.json({ data: data || [], total: count ?? 0 }, 200);
     } catch (err) {
       return c.json({ error: 'Internal server error' }, 500);
     }
@@ -93,7 +93,7 @@ adminAiModels.openapi(
         .maybeSingle();
 
       if (error) return c.json({ error: error.message }, 500);
-      return c.json(data ?? null);
+      return c.json(data ?? null, 200);
     } catch (err) {
       return c.json({ error: 'Internal server error' }, 500);
     }
@@ -154,7 +154,7 @@ adminAiModels.openapi(
 
       if (error) return c.json({ error: error.message }, 500);
       if (!data) return c.json({ error: 'AI model not found' }, 404);
-      return c.json(data);
+      return c.json(data, 200);
     } catch (err) {
       return c.json({ error: 'Internal server error' }, 500);
     }
@@ -186,7 +186,7 @@ adminAiModels.openapi(
 
       if (error) return c.json({ error: error.message }, 500);
       if (!data) return c.json({ error: 'AI model not found' }, 404);
-      return c.json(data);
+      return c.json(data, 200);
     } catch (err) {
       return c.json({ error: 'Internal server error' }, 500);
     }

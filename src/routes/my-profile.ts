@@ -49,7 +49,7 @@ myProfile.openapi(
       email: user.email ?? null,
       full_name: (user.user_metadata?.full_name as string) ?? null,
       phone: (user.user_metadata?.phone as string) ?? null,
-    });
+    }, 200);
   }
 );
 
@@ -144,7 +144,7 @@ myProfile.openapi(
         email: user.email ?? null,
         full_name: (user.user_metadata?.full_name as string) ?? null,
         phone: (user.user_metadata?.phone as string) ?? null,
-      });
+      }, 200);
     } catch (error) {
       return c.json({ error: 'Internal server error' }, 500);
     }

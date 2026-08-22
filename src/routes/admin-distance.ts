@@ -41,7 +41,7 @@ adminDistance.openapi(
 
     try {
       const distance = await getDistanceKm(latitude, longitude);
-      return c.json({ distance });
+      return c.json({ distance }, 200);
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Failed to compute distance';
       return c.json({ error: message }, 500);

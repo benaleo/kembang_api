@@ -109,7 +109,7 @@ adminCustomers.openapi(
       // alamat & jarak yang ditampilkan diambil dari customer_addresses default (is_default=true).
       // customer_addresses tidak punya FK ke customers, jadi merge manual per customer_id.
       if (customers.length > 0) {
-        const ids = customers.map((row) => row.id);
+        const ids = customers.map((row: { id: number }) => row.id);
         const { data: addresses } = await supabase
           .from('customer_addresses')
           .select('customer_id, recipient_address, recipient_distances, place')
@@ -133,7 +133,7 @@ adminCustomers.openapi(
         }
       }
 
-      return c.json({ data: customers, total: count ?? 0 });
+      return c.json({ data: customers, total: count ?? 0 }, 200);
     } catch (err) {
       return c.json({ error: 'Internal server error' }, 500);
     }
@@ -193,7 +193,7 @@ adminCustomers.openapi(
         return c.json({ error: 'Customer not found' }, 404);
       }
 
-      return c.json(data);
+      return c.json(data, 200);
     } catch (err) {
       return c.json({ error: 'Internal server error' }, 500);
     }
@@ -335,7 +335,7 @@ adminCustomers.openapi(
         return c.json({ error: 'Customer not found' }, 404);
       }
 
-      return c.json(data);
+      return c.json(data, 200);
     } catch (err) {
       return c.json({ error: 'Internal server error' }, 500);
     }
@@ -396,7 +396,7 @@ adminCustomers.openapi(
         return c.json({ error: 'Customer not found' }, 404);
       }
 
-      return c.json({ id: data.id });
+      return c.json({ id: data.id }, 200);
     } catch (err) {
       return c.json({ error: 'Internal server error' }, 500);
     }

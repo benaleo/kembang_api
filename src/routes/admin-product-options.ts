@@ -60,7 +60,7 @@ adminProductOptions.openapi(
         image_url: string | null;
       }>;
 
-      return c.json({ data: list });
+      return c.json({ data: list }, 200);
     } catch (err) {
       return c.json({ error: 'Internal server error' }, 500);
     }

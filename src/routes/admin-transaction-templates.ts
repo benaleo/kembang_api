@@ -55,7 +55,7 @@ adminTransactionTemplates.openapi(
       const { data, count, error } = await query;
       if (error) return c.json({ error: error.message }, 500);
 
-      return c.json({ data: data || [], total: count ?? 0 });
+      return c.json({ data: data || [], total: count ?? 0 }, 200);
     } catch (err) {
       return c.json({ error: 'Internal server error' }, 500);
     }
@@ -84,7 +84,7 @@ adminTransactionTemplates.openapi(
         .maybeSingle();
 
       if (error) return c.json({ error: error.message }, 500);
-      return c.json(data ?? null);
+      return c.json(data ?? null, 200);
     } catch (err) {
       return c.json({ error: 'Internal server error' }, 500);
     }
@@ -147,7 +147,7 @@ adminTransactionTemplates.openapi(
         .maybeSingle();
 
       if (error) return c.json({ error: error.message }, 500);
-      return c.json(data ?? null);
+      return c.json(data ?? null, 200);
     } catch (err) {
       return c.json({ error: 'Internal server error' }, 500);
     }

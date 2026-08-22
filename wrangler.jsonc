@@ -4,6 +4,14 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-01-01",
   "compatibility_flags": ["nodejs_compat"],
+  "account_id": "29fba5381cafbae9ade39231aeb7f38e",
+  "workers_dev": false,
+  "routes": [
+    {
+      "pattern": "api-kembang.langganan-ku.my.id",
+      "custom_domain": true
+    }
+  ],
   "observability": {
     "enabled": true
   },
@@ -11,6 +19,10 @@
     "directory": "./public"
   },
   "kv_namespaces": [
-    { "binding": "AI_SESSIONS" }
+    {
+      "binding": "AI_SESSIONS",
+      "id": "25fbf0e9b9424af98957baee293cf6d2",
+      "preview_id": "25fbf0e9b9424af98957baee293cf6d2"
+    }
   ]
 }

@@ -210,7 +210,7 @@ adminTransactions.openapi(
       const { data, error, count } = await query;
       if (error) return c.json({ error: error.message }, 500);
 
-      return c.json({ data: (data || []).map(formatTransactionIndex), total: count ?? 0 });
+      return c.json({ data: (data || []).map(formatTransactionIndex), total: count ?? 0 }, 200);
     } catch (err) {
       return c.json({ error: 'Internal server error' }, 500);
     }
@@ -229,7 +229,15 @@ adminTransactions.openapi(
         description: 'Calendar transactions',
         content: {
           'application/json': {
-            schema: z.object({ data: z.array(z.any()) }),
+            schema: z.object({
+              data: z.array(
+                z.object({
+                  date: z.string(),
+                  billed_at: z.string().nullable(),
+                  transactions: z.object({ customer_name: z.array(z.string()) }),
+                }),
+              ),
+            }),
           },
         },
       },
@@ -252,7 +260,7 @@ adminTransactions.openapi(
         .is('template_id', null)
         .order('date', { ascending: false });
 
-      if (error) return c.json({ error: error.message }, 500);
+      if (error) return c.json({ error: String(error.message) }, 500);
 
       const grouped = new Map<string, { date: string; billed_at: string | null; transactions: { customer_name: string[] } }>();
       for (const transaction of data || []) {
@@ -269,7 +277,7 @@ adminTransactions.openapi(
         if (names.length < 3) names.push(customerName);
       }
 
-      return c.json({ data: Array.from(grouped.values()) });
+      return c.json({ data: Array.from(grouped.values()) }, 200);
     } catch (err) {
       return c.json({ error: 'Internal server error' }, 500);
     }
@@ -302,7 +310,7 @@ adminTransactions.openapi(
         .order('created_at', { ascending: true });
 
       if (error) return c.json({ error: error.message }, 500);
-      return c.json(data || []);
+      return c.json(data || [], 200);
     } catch (err) {
       return c.json({ error: 'Internal server error' }, 500);
     }
@@ -348,7 +356,7 @@ adminTransactions.openapi(
         .order('route', { ascending: true });
 
       if (error) return c.json({ error: error.message }, 500);
-      if (!templateTransactions?.length) return c.json([]);
+      if (!templateTransactions?.length) return c.json([], 200);
 
       const customerIds = Array.from(
         new Set(
@@ -496,7 +504,7 @@ adminTransactions.openapi(
         insertedTransactions.push(insertedTransaction);
       }
 
-      return c.json(insertedTransactions);
+      return c.json(insertedTransactions, 200);
     } catch (err) {
       return c.json({ error: 'Internal server error' }, 500);
     }
@@ -551,7 +559,7 @@ adminTransactions.openapi(
             edges: (tps || []).map((tp: any) => ({ node: tp })),
           },
         },
-      });
+      }, 200);
     } catch (err) {
       return c.json({ error: 'Internal server error' }, 500);
     }
@@ -871,7 +879,7 @@ adminTransactions.openapi(
             edges: (tps || []).map((tp: any) => ({ node: tp })),
           },
         },
-      });
+      }, 200);
     } catch (err) {
       return c.json({ error: 'Internal server error' }, 500);
     }
@@ -906,7 +914,7 @@ adminTransactions.openapi(
       const { error } = await (supabase.from('transactions') as any).delete().eq('id', id);
       if (error) return c.json({ error: error.message }, 500);
 
-      return c.json({ success: true });
+      return c.json({ success: true }, 200);
     } catch (err) {
       return c.json({ error: 'Internal server error' }, 500);
     }
@@ -943,7 +951,7 @@ adminTransactions.openapi(
       const { error } = await (supabase.from('transactions') as any).update({ route }).eq('id', id);
       if (error) return c.json({ error: error.message }, 500);
 
-      return c.json({ success: true });
+      return c.json({ success: true }, 200);
     } catch (err) {
       return c.json({ error: 'Internal server error' }, 500);
     }
@@ -985,7 +993,7 @@ adminTransactions.openapi(
         .eq('id', id);
       if (error) return c.json({ error: error.message }, 500);
 
-      return c.json({ success: true });
+      return c.json({ success: true }, 200);
     } catch (err) {
       return c.json({ error: 'Internal server error' }, 500);
     }
@@ -1027,7 +1035,7 @@ adminTransactions.openapi(
         .eq('id', id);
       if (error) return c.json({ error: error.message }, 500);
 
-      return c.json({ success: true });
+      return c.json({ success: true }, 200);
     } catch (err) {
       return c.json({ error: 'Internal server error' }, 500);
     }

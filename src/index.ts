@@ -31,7 +31,14 @@ import { Bindings, Variables } from './types';
 const app = new OpenAPIHono<{ Bindings: Bindings; Variables: Variables }>();
 
 app.use('*', cors({
-  origin: ['http://localhost:4321', 'http://127.0.0.1:4321', 'http://localhost:5173', 'http://127.0.0.1:5173'],
+  origin: [
+    'http://localhost:4321',
+    'http://127.0.0.1:4321',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'https://kembang-cms.langganan-ku.my.id',
+    'https://kembang.langganan-ku.my.id',
+  ],
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization'],
   credentials: true

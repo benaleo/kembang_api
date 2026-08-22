@@ -73,7 +73,7 @@ adminCustomerOptions.openapi(
         address: defaultByCustomer.get(row.id) ?? null,
       }));
 
-      return c.json({ data });
+      return c.json({ data }, 200);
     } catch (err) {
       return c.json({ error: 'Internal server error' }, 500);
     }

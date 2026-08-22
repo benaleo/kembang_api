@@ -175,7 +175,7 @@ aiChat.openapi(
     const rows = data ?? [];
     const hasMore = rows.length > limit;
 
-    return c.json({ data: rows.slice(0, limit).reverse(), hasMore });
+    return c.json({ data: rows.slice(0, limit).reverse(), hasMore }, 200);
   },
 );
 

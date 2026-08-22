@@ -34,7 +34,7 @@ adminNotes.openapi(
         .order('updated_at', { ascending: false, nullsFirst: false });
 
       if (error) return c.json({ error: error.message }, 500);
-      return c.json(data || []);
+      return c.json(data || [], 200);
     } catch (err) {
       return c.json({ error: 'Internal server error' }, 500);
     }
@@ -99,7 +99,7 @@ adminNotes.openapi(
 
       if (error) return c.json({ error: error.message }, 500);
       if (!data) return c.json({ error: 'Note not found' }, 404);
-      return c.json(data);
+      return c.json(data, 200);
     } catch (err) {
       return c.json({ error: 'Internal server error' }, 500);
     }

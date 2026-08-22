@@ -133,7 +133,7 @@ adminDashboard.openapi(
         total,
       }));
 
-      return c.json({ income, driver_monthly, driver_today });
+      return c.json({ income, driver_monthly, driver_today }, 200);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Internal server error';
       return c.json({ error: message }, 500);

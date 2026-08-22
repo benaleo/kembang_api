@@ -59,7 +59,7 @@ adminCountDeliveryCost.openapi(
 
     try {
       const result = await computeDeliveryCost(date, route, supabase);
-      return c.json(result);
+      return c.json(result, 200);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Internal server error';
       const isNotFound =

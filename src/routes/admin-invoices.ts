@@ -206,7 +206,7 @@ adminInvoices.openapi(
         };
       });
 
-      return c.json({ data: formatted, total: count ?? 0 });
+      return c.json({ data: formatted, total: count ?? 0 }, 200);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Internal server error';
       return c.json({ error: message, data: [], total: 0 }, 500);
