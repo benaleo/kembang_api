@@ -247,7 +247,7 @@ adminCustomers.openapi(
           customer_addresses.map(async (addr: any) => {
             let dist = addr.recipient_distances ?? 0;
             if (addr.recipient_distances == null) {
-              try { dist = await computeDistance(addr); } catch (e) {
+              try { dist = await computeDistance(c.env.GEOAPIFY_API_KEY, addr); } catch (e) {
                 console.error('Distance calculation failed:', e);
               }
             }

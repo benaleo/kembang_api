@@ -118,7 +118,7 @@ adminAddresses.openapi(
     let recipientDistances = body.recipient_distances ?? 0;
     if (body.recipient_distances == null) {
       try {
-        recipientDistances = await computeDistance(body);
+        recipientDistances = await computeDistance(c.env.GEOAPIFY_API_KEY, body);
       } catch (e) {
         console.error('Distance calculation failed:', e);
       }
@@ -200,7 +200,7 @@ adminAddresses.openapi(
     let updateBody: typeof body = body;
     if (body.recipient_distances == null) {
       try {
-        const recipientDistances = await computeDistance(body);
+        const recipientDistances = await computeDistance(c.env.GEOAPIFY_API_KEY, body);
         updateBody = { ...body, recipient_distances: recipientDistances };
       } catch (e) {
         console.error('Distance calculation failed:', e);

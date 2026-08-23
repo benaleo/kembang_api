@@ -188,7 +188,7 @@ addresses.openapi(
     const shouldRecomputeDistance =
       body.recipient_address !== undefined || body.recipient_geo !== undefined;
     const recipientDistances = shouldRecomputeDistance
-      ? await computeDistance({
+      ? await computeDistance(c.env.GEOAPIFY_API_KEY, {
           recipient_address: body.recipient_address ?? null,
           recipient_geo: normalizeRecipientGeo(body.recipient_geo),
         })
