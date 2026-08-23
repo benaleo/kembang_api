@@ -32,6 +32,7 @@ export async function computeDeliveryCost(
   date: string,
   route: number,
   supabase: any,
+  geoapifyApiKey: string,
 ): Promise<DeliveryCostResult> {
   // 1. Get ALL transactions for this date whose route is in this group
   //    (route 1 matches 1.1, 1.2, ... — floor() comparison)
@@ -111,7 +112,7 @@ export async function computeDeliveryCost(
       if (geo) {
         distanceMeters = (await getDistanceKm(geo.lat, geo.lng)) * 1000;
       } else if (addr.recipient_address) {
-        const geocoded = await geocodeAddress(addr.recipient_address);
+        const geocoded = await geocodeAddress(geoapifyApiKey, addr.recipient_address);
         if (geocoded) distanceMeters = (await getDistanceKm(geocoded.lat, geocoded.lng)) * 1000;
       }
     } catch (e) {
