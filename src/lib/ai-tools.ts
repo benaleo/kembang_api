@@ -4,7 +4,7 @@ export interface AiTool {
   name: string;
   description: string;
   input_schema: Record<string, any>;
-  execute: (params: Record<string, any>, supabase: any) => Promise<Record<string, any>>;
+  execute: (params: Record<string, any>, supabase: any, geoapifyApiKey?: string) => Promise<Record<string, any>>;
 }
 
 const API_BASE = 'http://localhost:8787';
@@ -289,10 +289,11 @@ export const aiTools: AiTool[] = [
       },
       required: ['date', 'route'],
     },
-    async execute(params, supabase) {
+    async execute(params, supabase, geoapifyApiKey) {
       const { date, route } = params;
       try {
-        const result = await computeDeliveryCost(date, route, supabase);
+        if (!geoapifyApiKey) throw new Error('Geoapify API key is not configured');
+        const result = await computeDeliveryCost(date, route, supabase, geoapifyApiKey);
         return {
           distances: result.distances,
           total: formatRupiah(result.total),
