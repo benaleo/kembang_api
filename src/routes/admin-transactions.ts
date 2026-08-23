@@ -217,6 +217,87 @@ adminTransactions.openapi(
   },
 );
 
+// ---------------------------------------------------------------------------
+// GET /map — Delivery map data for a date (approved, route-ordered, no cap)
+// ---------------------------------------------------------------------------
+adminTransactions.openapi(
+  createRoute({
+    method: 'get',
+    path: '/map',
+    tags: ['Admin Transactions'],
+    request: { query: z.object({ date: z.string() }) },
+    responses: {
+      200: {
+        description: 'Delivery map data',
+        content: {
+          'application/json': {
+            schema: z.object({
+              data: z.array(
+                z.object({
+                  id: z.number(),
+                  customer_name: z.string(),
+                  customer_geo: z.object({ lat: z.number(), lng: z.number() }).nullable(),
+                  customer_address: z.string().nullable(),
+                  customer_phone: z.string().nullable(),
+                  customer_distances: z.number().nullable(),
+                  route: z.number().nullable(),
+                  name_alter: z.string().nullable(),
+                  products: z.array(z.object({ code: z.string(), qty: z.number() })),
+                }),
+              ),
+            }),
+          },
+        },
+      },
+      500: { description: 'Server error', content: { 'application/json': { schema: errorResponse } } },
+    },
+  }),
+  async (c) => {
+    try {
+      const supabase = c.get('supabase') as any;
+      const { date } = c.req.valid('query');
+
+      const { data, error } = await supabase
+        .from('transactions' as any)
+        .select(
+          `id, customer_name, customer_address, customer_phone, customer_distances, customer_geo, route, name_alter,
+          customer:customers (name, address, phone),
+          transaction_products (qty, product:products (code))`,
+        )
+        .eq('date', date)
+        .eq('status', 'approved')
+        .order('route', { ascending: true });
+
+      if (error) return c.json({ error: error.message }, 500);
+
+      const result = (data || []).map((transaction: any) => {
+        const customer = Array.isArray(transaction.customer) ? transaction.customer[0] : transaction.customer;
+        const rawGeo = transaction.customer_geo;
+        const geo = typeof rawGeo === 'string' ? JSON.parse(rawGeo) : rawGeo;
+
+        return {
+          id: transaction.id,
+          customer_name: transaction.customer_name || customer?.name || '',
+          customer_geo: geo?.lat != null && geo?.lng != null ? { lat: geo.lat, lng: geo.lng } : null,
+          customer_address: transaction.customer_address || customer?.address || null,
+          customer_phone: transaction.customer_phone || customer?.phone || null,
+          customer_distances: transaction.customer_distances != null ? Number(transaction.customer_distances) : null,
+          route: transaction.route,
+          name_alter: transaction.name_alter ?? null,
+          products: (transaction.transaction_products || []).map((tp: any) => ({
+            code: tp.product?.code ?? '',
+            qty: tp.qty ?? 0,
+          })),
+        };
+      });
+
+      return c.json({ data: result }, 200);
+    } catch (err) {
+      return c.json({ error: 'Internal server error' }, 500);
+    }
+  },
+);
+
 // GET /calendar — Current month unbilled transactions grouped by date
 // ---------------------------------------------------------------------------
 adminTransactions.openapi(
