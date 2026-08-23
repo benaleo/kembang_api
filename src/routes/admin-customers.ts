@@ -1,6 +1,6 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { Bindings, Variables } from '../types';
-import { computeDistance } from '../lib/gomaps';
+import { computeDistance, getDistanceKm } from '../lib/gomaps';
 
 const adminCustomers = new OpenAPIHono<{ Bindings: Bindings; Variables: Variables }>();
 
@@ -397,6 +397,192 @@ adminCustomers.openapi(
       }
 
       return c.json({ id: data.id }, 200);
+    } catch (err) {
+      return c.json({ error: 'Internal server error' }, 500);
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// GET /{id}/history — Paginated transaction history for a customer
+// ---------------------------------------------------------------------------
+
+adminCustomers.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{id}/history',
+    tags: ['Admin Customers'],
+    request: {
+      params: z.object({
+        id: z.string().openapi({
+          param: {
+            name: 'id',
+            in: 'path',
+            description: 'Customer ID',
+            required: true,
+          },
+          example: '1',
+        }),
+      }),
+      query: z.object({
+        keyword: z.string().optional(),
+        page: z.coerce.number().int().min(1).default(1),
+        pageSize: z.coerce.number().int().min(1).max(100).default(10),
+      }),
+    },
+    responses: {
+      200: {
+        description: 'Customer transaction history',
+        content: {
+          'application/json': {
+            schema: z.object({ data: z.array(z.record(z.any())), total: z.number() }),
+          },
+        },
+      },
+      500: {
+        description: 'Server error',
+        content: { 'application/json': { schema: z.object({ error: z.string() }) } },
+      },
+    },
+  }),
+  async (c) => {
+    try {
+      const supabase = c.get('supabase');
+      const customerId = Number(c.req.valid('param').id);
+      const { keyword, page, pageSize } = c.req.valid('query');
+
+      const offset = (page - 1) * pageSize;
+
+      let query = supabase
+        .from('transactions')
+        .select(
+          `
+          id,
+          date,
+          name_alter,
+          customer_id,
+          customer_name,
+          customer_phone,
+          customer_address,
+          note,
+          note_route,
+          route,
+          cost_delivery,
+          billed_at,
+          is_web_order,
+          status,
+          customer:customers (
+            name,
+            address,
+            address_note,
+            distance,
+            phone,
+            place
+          ),
+          transaction_products (
+            product:products (
+              name,
+              price
+            ),
+            qty
+          )
+        `,
+          { count: 'exact' },
+        )
+        .eq('customer_id', customerId)
+        .is('template_id', null)
+        .order('date', { ascending: false })
+        .range(offset, offset + pageSize - 1);
+
+      if (keyword && keyword.trim()) {
+        const kw = keyword.trim();
+        query = query.or(`note.ilike.%${kw}%,note_route.ilike.%${kw}%`);
+      }
+
+      const { data, count, error } = await query;
+      if (error) return c.json({ error: error.message }, 500);
+
+      return c.json({ data: data || [], total: count ?? 0 }, 200);
+    } catch (err) {
+      return c.json({ error: 'Internal server error' }, 500);
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// POST /sync-distances — Compute & store road distance for customers with distance=0
+// ---------------------------------------------------------------------------
+
+adminCustomers.openapi(
+  createRoute({
+    method: 'post',
+    path: '/sync-distances',
+    tags: ['Admin Customers'],
+    request: {
+      body: { content: { 'application/json': { schema: z.object({}).passthrough().optional() } } },
+    },
+    responses: {
+      200: {
+        description: 'Sync summary',
+        content: {
+          'application/json': {
+            schema: z.object({
+              updated: z.number(),
+              failed: z.number(),
+              skipped: z.number(),
+            }),
+          },
+        },
+      },
+      500: {
+        description: 'Server error',
+        content: { 'application/json': { schema: z.object({ error: z.string() }) } },
+      },
+    },
+  }),
+  async (c) => {
+    try {
+      const supabase = c.get('supabase');
+
+      const { data: customers, error } = await supabase
+        .from('customers')
+        .select('id, longitude, latitude')
+        .eq('distance', 0)
+        .not('longitude', 'is', null)
+        .not('latitude', 'is', null);
+
+      if (error) return c.json({ error: error.message }, 500);
+      if (!customers || customers.length === 0) {
+        return c.json({ updated: 0, failed: 0, skipped: 0 }, 200);
+      }
+
+      let updated = 0;
+      let failed = 0;
+
+      // Process sequentially to avoid hammering the routing service
+      for (const customer of customers) {
+        try {
+          if (!customer.longitude || !customer.latitude) {
+            continue;
+          }
+          const distanceKm = await getDistanceKm(customer.latitude, customer.longitude);
+          const rounded = Number(distanceKm.toFixed(1));
+          const { error: updateError } = await supabase
+            .from('customers')
+            .update({ distance: rounded })
+            .eq('id', customer.id);
+          if (updateError) throw updateError;
+          updated += 1;
+        } catch (err) {
+          console.error(`Error syncing distance for customer ${customer.id}:`, err);
+          failed += 1;
+        }
+      }
+
+      return c.json(
+        { updated, failed, skipped: customers.length - updated - failed },
+        200,
+      );
     } catch (err) {
       return c.json({ error: 'Internal server error' }, 500);
     }
