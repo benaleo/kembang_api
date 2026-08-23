@@ -8,7 +8,123 @@ const placeSchema = z.object({
   formatted: z.string(),
 });
 
+/**
+ * Extract coordinates / place name from a Google Maps URL.
+ * Handles: /@lat,lng,zoom, !3dlat!4dlng (pin), and /place/<name>/ patterns.
+ */
+export function parseGoogleMapsUrl(rawUrl: string): {
+  lat?: number;
+  lng?: number;
+  placeName?: string;
+} {
+  const result: { lat?: number; lng?: number; placeName?: string } = {};
+
+  // Precise pin: !3d<lat>!4d<lng>
+  const pinMatch = rawUrl.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/);
+  if (pinMatch) {
+    result.lat = parseFloat(pinMatch[1]);
+    result.lng = parseFloat(pinMatch[2]);
+    return result;
+  }
+
+  // Viewport center: /@<lat>,<lng>,zoom
+  const atMatch = rawUrl.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)(?:[,.][^/@!?]*)?(?:[/?]|$)/);
+  if (atMatch) {
+    result.lat = parseFloat(atMatch[1]);
+    result.lng = parseFloat(atMatch[2]);
+    return result;
+  }
+
+  // Place name fallback: /place/<name>/
+  const placeMatch = rawUrl.match(/\/place\/([^/@!?]+)/);
+  if (placeMatch) {
+    try {
+      result.placeName = decodeURIComponent(placeMatch[1]).replace(/\+/g, ' ');
+    } catch {
+      result.placeName = placeMatch[1];
+    }
+  }
+
+  return result;
+}
+
 const adminGeocode = new OpenAPIHono<{ Bindings: Bindings; Variables: Variables }>();
+
+// -------------------------------------------------------------------------
+// GET /google-place?url=<google maps url> — Resolve location from a
+// Google Maps link (incl. short links) into { lat, lng, formatted }.
+// -------------------------------------------------------------------------
+
+adminGeocode.openapi(
+  createRoute({
+    method: 'get',
+    path: '/google-place',
+    tags: ['Admin Geocode'],
+    request: {
+      query: z.object({
+        url: z.string().url(),
+      }),
+    },
+    responses: {
+      200: {
+        description: 'Resolved place from Google Maps URL (null when not resolvable)',
+        content: { 'application/json': { schema: placeSchema.nullable() } },
+      },
+      400: {
+        description: 'Invalid request',
+        content: { 'application/json': { schema: z.object({ error: z.string() }) } },
+      },
+      500: {
+        description: 'Server error',
+        content: { 'application/json': { schema: z.object({ error: z.string() }) } },
+      },
+    },
+  }),
+  async (c) => {
+    try {
+      let target = c.req.valid('query').url;
+
+      // Follow short links (maps.app.goo.gl, goo.gl/maps) server-side —
+      // browsers can't do this due to CORS.
+      if (/goo\.gl|maps\.app/.test(target)) {
+        const res = await fetch(target, { redirect: 'follow' });
+        if (!res.ok) {
+          return c.json({ error: `Failed to resolve short link: HTTP ${res.status}` }, 400);
+        }
+        target = res.url;
+      }
+
+      const parsed = parseGoogleMapsUrl(target);
+
+      if (parsed.lat !== undefined && parsed.lng !== undefined) {
+        // Coordinates found — reverse geocode so the address field gets filled too
+        const place = await geoapifyReverse(c.env.GEOAPIFY_API_KEY, parsed.lat, parsed.lng);
+        return c.json(
+          {
+            lat: parsed.lat,
+            lng: parsed.lng,
+            formatted:
+              place?.formatted ||
+              `${parsed.lat.toFixed(6)}, ${parsed.lng.toFixed(6)}`,
+          },
+          200,
+        );
+      }
+
+      if (parsed.placeName) {
+        // No coordinates in the link — fall back to forward geocoding the place name
+        const place = await geoapifySearch(c.env.GEOAPIFY_API_KEY, `${parsed.placeName} Indonesia`);
+        if (!place) return c.json(null, 200);
+        return c.json(place, 200);
+      }
+
+      return c.json(null, 200);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Failed to resolve Google Maps URL';
+      return c.json({ error: message }, 500);
+    }
+  }
+);
 
 adminGeocode.openapi(
   createRoute({
