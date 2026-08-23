@@ -20,6 +20,7 @@ adminCustomerOptions.openapi(
                   name: z.string(),
                   phone: z.string().nullable(),
                   address: z.string().nullable(),
+                  address_detail: z.string().nullable(),
                 }),
               ),
             }),
@@ -57,18 +58,21 @@ adminCustomerOptions.openapi(
 
       // alamat default diambil dari customer_addresses (is_default=true).
       // customer_addresses tidak punya FK ke customers, jadi merge manual per customer_id.
-      const defaultByCustomer = new Map<number, string | null>();
+      const defaultByCustomer = new Map<number, { address: string | null; address_detail: string | null }>();
       for (let i = 0; i < list.length; i += PAGE_SIZE) {
         const ids = list.slice(i, i + PAGE_SIZE).map((row) => row.id);
         const { data: addresses } = await supabase
           .from('customer_addresses')
-          .select('customer_id, recipient_address')
+          .select('customer_id, recipient_address, recipient_address_detail')
           .in('customer_id', ids)
           .eq('is_default', true);
 
-        for (const addr of (addresses || []) as Array<{ customer_id: number; recipient_address: string | null }>) {
+        for (const addr of (addresses || []) as Array<{ customer_id: number; recipient_address: string | null; recipient_address_detail: string | null }>) {
           if (!defaultByCustomer.has(addr.customer_id)) {
-            defaultByCustomer.set(addr.customer_id, addr.recipient_address);
+            defaultByCustomer.set(addr.customer_id, {
+              address: addr.recipient_address,
+              address_detail: addr.recipient_address_detail,
+            });
           }
         }
       }
@@ -77,7 +81,8 @@ adminCustomerOptions.openapi(
         id: row.id,
         name: row.name,
         phone: row.phone ?? null,
-        address: defaultByCustomer.get(row.id) ?? null,
+        address: defaultByCustomer.get(row.id)?.address ?? null,
+        address_detail: defaultByCustomer.get(row.id)?.address_detail ?? null,
       }));
 
       return c.json({ data }, 200);
