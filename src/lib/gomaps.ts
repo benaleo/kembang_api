@@ -67,34 +67,39 @@ export async function getDistanceKm(destLat: number, destLng: number): Promise<n
 }
 
 /**
- * Geocode alamat teks → koordinat via Nominatim (OpenStreetMap).
+ * Geocode alamat teks → koordinat via Geoapify.
  */
 export async function geocodeAddress(
+  apiKey: string,
   address: string,
 ): Promise<{ lat: number; lng: number } | null> {
-  const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`;
-  const response = await fetch(url, {
-    headers: { 'User-Agent': 'kembang-api/1.0' },
-  });
+  const url = `https://api.geoapify.com/v1/geocode/search?text=${encodeURIComponent(address)}&limit=1&apiKey=${apiKey}`;
+  const response = await fetch(url, { headers: { Accept: 'application/json' } });
   if (!response.ok) return null;
-  const results = (await response.json()) as Array<{ lat: string; lon: string }>;
-  if (!results.length) return null;
-  return { lat: parseFloat(results[0].lat), lng: parseFloat(results[0].lon) };
+  const data = (await response.json()) as {
+    features?: Array<{ properties: { lat: number; lon: number } }>;
+  };
+  const props = data.features?.[0]?.properties;
+  if (!props) return null;
+  return { lat: props.lat, lng: props.lon };
 }
 
 /**
  * Hitung jarak (km) dari koordinat peta (recipient_geo) atau geocode alamat teks.
  * Return 0 kalau tidak ada koordinat maupun alamat.
  */
-export async function computeDistance(body: {
-  recipient_address?: string | null;
-  recipient_geo?: { lat: number; lng: number } | null;
-}): Promise<number> {
+export async function computeDistance(
+  apiKey: string,
+  body: {
+    recipient_address?: string | null;
+    recipient_geo?: { lat: number; lng: number } | null;
+  },
+): Promise<number> {
   if (body.recipient_geo?.lat !== undefined && body.recipient_geo?.lng !== undefined) {
     return getDistanceKm(body.recipient_geo.lat, body.recipient_geo.lng);
   }
   if (body.recipient_address) {
-    const geo = await geocodeAddress(body.recipient_address);
+    const geo = await geocodeAddress(apiKey, body.recipient_address);
     if (geo) return getDistanceKm(geo.lat, geo.lng);
   }
   return 0;
