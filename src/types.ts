@@ -6,6 +6,7 @@ export type Bindings = {
   TELEGRAM_ALLOWED_CHAT_IDS: string;
   AI_SESSIONS: any; // KVNamespace
   INVOICE_SECRET_KEY: string;
+  GEOAPIFY_API_KEY: string;
 };
 
 export type Variables = {
