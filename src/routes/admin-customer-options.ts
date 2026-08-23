@@ -36,23 +36,30 @@ adminCustomerOptions.openapi(
     try {
       const supabase = c.get('supabase');
 
-      const { data: customers, error } = await supabase
-        .from('customers')
-        .select('id, name, phone')
-        .order('name', { ascending: true });
+      // PostgREST default cap 1000 rows/request, jadi harus di-paginate biar dapet semua.
+      const PAGE_SIZE = 1000;
+      const list: Array<{ id: number; name: string; phone: string | null }> = [];
+      for (let from = 0; ; from += PAGE_SIZE) {
+        const { data: page, error } = await supabase
+          .from('customers')
+          .select('id, name, phone')
+          .order('name', { ascending: true })
+          .range(from, from + PAGE_SIZE - 1);
 
-      if (error) {
-        return c.json({ error: error.message }, 500);
+        if (error) {
+          return c.json({ error: error.message }, 500);
+        }
+
+        const rows = (page || []) as Array<{ id: number; name: string; phone: string | null }>;
+        list.push(...rows);
+        if (rows.length < PAGE_SIZE) break;
       }
-
-      // supabase client tidak punya generated types, bentuk row di-cast manual.
-      const list = (customers || []) as Array<{ id: number; name: string; phone: string | null }>;
 
       // alamat default diambil dari customer_addresses (is_default=true).
       // customer_addresses tidak punya FK ke customers, jadi merge manual per customer_id.
       const defaultByCustomer = new Map<number, string | null>();
-      if (list.length > 0) {
-        const ids = list.map((row) => row.id);
+      for (let i = 0; i < list.length; i += PAGE_SIZE) {
+        const ids = list.slice(i, i + PAGE_SIZE).map((row) => row.id);
         const { data: addresses } = await supabase
           .from('customer_addresses')
           .select('customer_id, recipient_address')

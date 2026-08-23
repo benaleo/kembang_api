@@ -50,6 +50,8 @@ adminProductOptions.openapi(
         return c.json({ error: error.message }, 500);
       }
 
+      const origin = new URL(c.req.url).origin;
+
       const list = (products || []) as Array<{
         id: number;
         name: string;
@@ -60,7 +62,12 @@ adminProductOptions.openapi(
         image_url: string | null;
       }>;
 
-      return c.json({ data: list }, 200);
+      const data = list.map((row) => ({
+        ...row,
+        image_url: row.image_url ?? `${origin}/default.webp`,
+      }));
+
+      return c.json({ data }, 200);
     } catch (err) {
       return c.json({ error: 'Internal server error' }, 500);
     }
