@@ -1040,6 +1040,49 @@ adminTransactions.openapi(
 );
 
 // ---------------------------------------------------------------------------
+// PATCH /:id/distance — Update customer distance on a transaction
+// ---------------------------------------------------------------------------
+
+adminTransactions.openapi(
+  createRoute({
+    method: 'patch',
+    path: '/{id}/distance',
+    tags: ['Admin Transactions'],
+    request: {
+      params: idParamSchema,
+      body: {
+        content: {
+          'application/json': { schema: z.object({ customer_distances: z.number().nullable() }) },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: 'Distance updated',
+        content: { 'application/json': { schema: z.object({ success: z.boolean() }) } },
+      },
+      500: { description: 'Server error', content: { 'application/json': { schema: errorResponse } } },
+    },
+  }),
+  async (c) => {
+    try {
+      const supabase = c.get('supabase') as any;
+      const { id } = c.req.valid('param');
+      const { customer_distances } = c.req.valid('json');
+
+      const { error } = await (supabase.from('transactions') as any)
+        .update({ customer_distances })
+        .eq('id', id);
+      if (error) return c.json({ error: error.message }, 500);
+
+      return c.json({ success: true }, 200);
+    } catch (err) {
+      return c.json({ error: 'Internal server error' }, 500);
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
 // PATCH /:id/delivery-cost — Update delivery cost
 // ---------------------------------------------------------------------------
 
