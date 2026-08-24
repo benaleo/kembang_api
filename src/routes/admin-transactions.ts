@@ -38,6 +38,7 @@ const createTransactionSchema = z.object({
   note_route: z.string(),
   template_id: z.number().nullable().optional(),
   customer_address_detail: z.string().nullable().optional(),
+  customer_place: z.string().nullable().optional(),
   customer_geo: z.object({ lat: z.number(), lng: z.number() }).nullable().optional(),
   customer_distances: z.number().nullable().optional(),
   products: z.array(transactionProductSchema),
@@ -65,6 +66,7 @@ const transactionSchema = z.object({
   customer_phone: z.string().nullable(),
   customer_address: z.string().nullable(),
   customer_address_detail: z.string().nullable(),
+  customer_place: z.string().nullable(),
   customer_geo: z.unknown().nullable(),
   customer_distances: z.unknown().nullable(),
   name_alter: z.string().nullable(),
@@ -112,7 +114,7 @@ function formatTransactionIndex(transaction: any) {
     customer_address: transaction.customer_address || customer?.address || '',
     customer_address_note: customer?.address_note || '',
     customer_phone: transaction.customer_phone || customer?.phone || '',
-    customer_place: customer?.place || '',
+    customer_place: transaction.customer_place || customer?.place || '',
     customer_distance: transaction.customer_distances ?? customer?.distance ?? 0,
     customer_distances: transaction.customer_distances ?? null,
     customer_address_detail: transaction.customer_address_detail ?? null,
@@ -170,7 +172,7 @@ adminTransactions.openapi(
       let query = supabase
         .from('transactions' as any)
         .select(
-          `id, date, invoice, customer_id, customer_name, customer_phone, customer_address, customer_address_detail, customer_geo, customer_distances, name_alter, note, note_route, route, cost_delivery, cost_order, billed_at, template_id, created_at, updated_at, is_web_order, status,
+          `id, date, invoice, customer_id, customer_name, customer_phone, customer_address, customer_address_detail, customer_place, customer_geo, customer_distances, name_alter, note, note_route, route, cost_delivery, cost_order, billed_at, template_id, created_at, updated_at, is_web_order, status,
           customer:customers (name, address, address_note, distance, phone, place),
           transaction_products (id, product_id, qty, parent_id, is_free, product:products (id, name, price))`,
           { count: 'exact' },
