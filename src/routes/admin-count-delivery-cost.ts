@@ -58,7 +58,7 @@ adminCountDeliveryCost.openapi(
     const { date, route } = c.req.valid('json');
 
     try {
-      const result = await computeDeliveryCost(date, route, supabase, c.env.GEOAPIFY_API_KEY);
+      const result = await computeDeliveryCost(date, route, supabase, c.env.GEOAPIFY_API_KEY, c.env.MAPBOX_ACCESS_TOKEN);
       return c.json(result, 200);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Internal server error';

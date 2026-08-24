@@ -7,6 +7,7 @@ export type Bindings = {
   AI_SESSIONS: any; // KVNamespace
   INVOICE_SECRET_KEY: string;
   GEOAPIFY_API_KEY: string;
+  MAPBOX_ACCESS_TOKEN: string;
 };
 
 export type Variables = {

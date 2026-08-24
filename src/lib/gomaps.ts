@@ -2,19 +2,24 @@
 // Origin: Jl. Kepodang, Rempoa, Ciputat Timur, Tangerang Selatan
 // No API key needed — uses free public OSRM server
 
-const ORIGIN = { lat: -6.2928633, lng: 106.7548264 };
+const ORIGIN = { lat: -6.292556760455276, lng: 106.75487235394468 };
 const OSRM_BASES = [
   'https://router.project-osrm.org/route/v1/driving',
   'https://routing.openstreetmap.de/routed-car/route/v1/driving',
 ];
 const ROUTE_FACTOR = 1.35;
 
-function getFallbackDistanceKm(destLat: number, destLng: number): number {
+function getFallbackDistanceKm(
+  fromLat: number,
+  fromLng: number,
+  destLat: number,
+  destLng: number,
+): number {
   const earthRadiusKm = 6371;
   const toRad = (degree: number) => (degree * Math.PI) / 180;
-  const deltaLat = toRad(destLat - ORIGIN.lat);
-  const deltaLng = toRad(destLng - ORIGIN.lng);
-  const originLat = toRad(ORIGIN.lat);
+  const deltaLat = toRad(destLat - fromLat);
+  const deltaLng = toRad(destLng - fromLng);
+  const originLat = toRad(fromLat);
   const targetLat = toRad(destLat);
   const haversine =
     Math.sin(deltaLat / 2) ** 2 +
@@ -24,13 +29,18 @@ function getFallbackDistanceKm(destLat: number, destLng: number): number {
 }
 
 /**
- * Hitung jarak jalan (km) dari toko ke koordinat tujuan via OSRM.
+ * Hitung jarak jalan (km) antara dua koordinat via OSRM.
  */
-export async function getDistanceKm(destLat: number, destLng: number): Promise<number> {
+export async function getRouteDistanceKm(
+  fromLat: number,
+  fromLng: number,
+  destLat: number,
+  destLng: number,
+): Promise<number> {
   const errors: string[] = [];
 
   for (const osrmBase of OSRM_BASES) {
-    const url = `${osrmBase}/${ORIGIN.lng},${ORIGIN.lat};${destLng},${destLat}?overview=false`;
+    const url = `${osrmBase}/${fromLng},${fromLat};${destLng},${destLat}?overview=false`;
 
     try {
       const response = await fetch(url, {
@@ -63,7 +73,14 @@ export async function getDistanceKm(destLat: number, destLng: number): Promise<n
   }
 
   console.warn(`OSRM unavailable, using fallback distance: ${errors.join('; ')}`);
-  return getFallbackDistanceKm(destLat, destLng);
+  return getFallbackDistanceKm(fromLat, fromLng, destLat, destLng);
+}
+
+/**
+ * Hitung jarak jalan (km) dari toko ke koordinat tujuan via OSRM.
+ */
+export async function getDistanceKm(destLat: number, destLng: number): Promise<number> {
+  return getRouteDistanceKm(ORIGIN.lat, ORIGIN.lng, destLat, destLng);
 }
 
 /**
@@ -82,6 +99,58 @@ export async function geocodeAddress(
   const props = data.features?.[0]?.properties;
   if (!props) return null;
   return { lat: props.lat, lng: props.lon };
+}
+
+export interface MapboxMatrixResult {
+  // jarak toko -> tiap titik (radial), sejajar urutan `points` yang dikirim
+  radialKm: number[];
+  // total jarak rute berurutan: toko -> point[0] -> point[1] -> ...
+  sequentialTotalKm: number;
+}
+
+/**
+ * Hitung matrix jarak (toko + semua titik tujuan) via Mapbox Directions Matrix API
+ * dalam SATU request — menghindari N subrequest terpisah.
+ *
+ * `points` harus sudah terurut sesuai urutan rute (ascending by route number).
+ */
+export async function getMapboxMatrix(
+  accessToken: string,
+  points: Array<{ lat: number; lng: number }>,
+): Promise<MapboxMatrixResult> {
+  if (points.length === 0) {
+    return { radialKm: [], sequentialTotalKm: 0 };
+  }
+
+  const coordinates = [ORIGIN, ...points]
+    .map((p) => `${p.lng},${p.lat}`)
+    .join(';');
+
+  const url = `https://api.mapbox.com/directions-matrix/v1/mapbox/driving-traffic/${coordinates}?annotations=distance&access_token=${accessToken}`;
+
+  const response = await fetch(url, { headers: { Accept: 'application/json' } });
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`Mapbox Matrix API error: HTTP ${response.status} ${body.slice(0, 200)}`);
+  }
+
+  const data = (await response.json()) as { code: string; distances?: number[][] };
+  if (data.code !== 'Ok' || !data.distances) {
+    throw new Error(`Mapbox Matrix API error: ${data.code || 'no distances'}`);
+  }
+
+  const { distances } = data;
+
+  // radial: toko (index 0) -> tiap titik
+  const radialKm = points.map((_, i) => (distances[0]?.[i + 1] ?? 0) / 1000);
+
+  // sequential: toko -> point[0] -> point[1] -> ... (adjacent diagonal)
+  let sequentialTotalKm = 0;
+  for (let i = 0; i < points.length; i++) {
+    sequentialTotalKm += (distances[i]?.[i + 1] ?? 0) / 1000;
+  }
+
+  return { radialKm, sequentialTotalKm };
 }
 
 /**

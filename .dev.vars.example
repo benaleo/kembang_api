@@ -7,3 +7,6 @@ INVOICE_SECRET_KEY=
 
 # Geoapify (geocoding)
 GEOAPIFY_API_KEY=
+
+# Mapbox (directions matrix — delivery cost route distance)
+MAPBOX_ACCESS_TOKEN=

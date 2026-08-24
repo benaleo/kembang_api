@@ -67,7 +67,7 @@ aiChat.openapi(
       );
     }
 
-    const stream = await runAiAgent(cleanMessages, supabase, apiKey, undefined, c.env.GEOAPIFY_API_KEY);
+    const stream = await runAiAgent(cleanMessages, supabase, apiKey, undefined, c.env.GEOAPIFY_API_KEY, c.env.MAPBOX_ACCESS_TOKEN);
 
     let assistantText = '';
     const decoder = new TextDecoder();

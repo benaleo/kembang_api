@@ -48,9 +48,10 @@ export async function runAiAgent(
   apiKey: string,
   model?: string,
   geoapifyApiKey?: string,
+  mapboxAccessToken?: string,
 ): Promise<ReadableStream<Uint8Array>> {
   const models = model ? [model, ...DEFAULT_MODELS.filter(m => m !== model)] : DEFAULT_MODELS;
-  return new ResponseStream(messages, supabase, apiKey, models, geoapifyApiKey).body as ReadableStream<Uint8Array>;
+  return new ResponseStream(messages, supabase, apiKey, models, geoapifyApiKey, mapboxAccessToken).body as ReadableStream<Uint8Array>;
 }
 
 class ResponseStream {
@@ -63,6 +64,7 @@ class ResponseStream {
     private apiKey: string,
     private models: string[],
     private geoapifyApiKey?: string,
+    private mapboxAccessToken?: string,
   ) {
     this.body = new ReadableStream({
       start: (controller) => {
@@ -124,7 +126,7 @@ class ResponseStream {
                 if (!tool) {
                   toolResult = { error: `Tool tidak dikenal: ${tc.name}` };
                 } else {
-                  toolResult = await tool.execute(parsedArgs, this.supabase, this.geoapifyApiKey);
+                  toolResult = await tool.execute(parsedArgs, this.supabase, this.geoapifyApiKey, this.mapboxAccessToken);
                 }
               } catch (e) {
                 toolResult = { error: e instanceof Error ? e.message : 'Tool execution error' };
