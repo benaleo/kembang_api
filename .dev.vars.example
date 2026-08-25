@@ -1,5 +1,9 @@
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
+# Optional: public origin used to build OAuth callback URLs behind proxies/dev tunnels.
+# Local dev: http://localhost:8787
+# Production: https://api-kembang.langganan-ku.my.id
+API_PUBLIC_URL=
 OMNIROUTER_API_KEY=
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_ALLOWED_CHAT_IDS=
@@ -10,3 +14,7 @@ GEOAPIFY_API_KEY=
 
 # Mapbox (directions matrix — delivery cost route distance)
 MAPBOX_ACCESS_TOKEN=
+
+# Swagger docs basic auth (jangan set di production = docs disabled)
+SWAGGER_USERNAME=
+SWAGGER_PASSWORD=

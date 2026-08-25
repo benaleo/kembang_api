@@ -29,6 +29,7 @@ import adminNotes from './routes/admin-notes';
 import adminTransactionTemplates from './routes/admin-transaction-templates';
 import telegramWebhook from './routes/telegram-webhook';
 import { requireAuth } from './middleware/auth';
+import { rateLimit, secureHeaders, swaggerBasicAuth } from './middleware/security';
 import { Bindings, Variables } from './types';
 
 const app = new OpenAPIHono<{ Bindings: Bindings; Variables: Variables }>();
@@ -54,6 +55,29 @@ app.use('*', async (c, next) => {
   c.set('supabase', supabase);
   await next();
 });
+
+// --- Guards ---
+
+// Secure headers untuk semua response
+app.use('*', secureHeaders);
+
+// Global rate limit: 120 request / menit / IP (webhook telegram dikecualikan)
+app.use('/api/*', async (c, next) => {
+  if (c.req.path.startsWith('/api/') && c.req.path.includes('telegram')) return next();
+  return rateLimit({ name: 'global', windowMs: 60_000, max: 120 })(c, next);
+});
+
+// Throttle ketat untuk endpoint auth (brute force protection):
+// login & register: 10 / 5 menit / IP, forgot-password: 5 / 5 menit / IP,
+// OAuth: 10 / 5 menit / IP untuk mencegah abuse provider redirect/session handoff.
+app.use('/api/v1/auth/login', rateLimit({ name: 'auth-login', windowMs: 300_000, max: 10 }));
+app.use('/api/v1/auth/register', rateLimit({ name: 'auth-register', windowMs: 300_000, max: 10 }));
+app.use('/api/v1/auth/forgot-password', rateLimit({ name: 'auth-forgot', windowMs: 300_000, max: 5 }));
+app.use('/api/v1/auth/oauth/*', rateLimit({ name: 'auth-oauth', windowMs: 300_000, max: 10 }));
+
+// Swagger docs dilindungi Basic Auth (kredensial dari SWAGGER_USERNAME/SWAGGER_PASSWORD)
+app.use('/docs', swaggerBasicAuth());
+app.use('/openapi.json', swaggerBasicAuth());
 
 app.use('/api/v1/carts/*', requireAuth);
 app.use('/api/v1/addresses/*', requireAuth);
