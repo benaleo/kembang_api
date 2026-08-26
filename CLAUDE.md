@@ -35,3 +35,34 @@ Local dev pakai **local Supabase** (self-hosted via Supabase CLI, Docker), bukan
 ## Kandidat Migrasi
 
 `kembang_cms/supabase/functions/` (orders, deliveries, delivery-count, invoice-datatable, dashboard) masih stub/TODO di Supabase Edge Functions. Kalau mau konsolidasi business logic ke 1 tempat, kandidat untuk dipindah ke sini — belum dilakukan, cek dengan tim sebelum migrasi biar gak duplikat endpoint.
+
+## Authorization Model
+
+Karena service role key bypass RLS, **semua** authorization ada di kode:
+
+- `requireAuth` — validasi `Authorization: Bearer <supabase-jwt>`, atau `X-Internal-Token` yang match `INTERNAL_API_TOKEN` (timing-safe). Kalau header internal dikirim tapi salah → 401, gak ada fallback ke Authorization.
+- `requireAdmin` — cek `app_metadata.role === 'admin'`. Dipakai di `/api/v1/admin/*` dan `/api/v1/ai-chat/*`.
+
+Role disimpan di **`app_metadata`**, bukan `user_metadata` — `app_metadata` cuma bisa ditulis pakai service role key, jadi user gak bisa self-promote lewat `updateUser()`.
+
+CMS dan storefront publik share endpoint login yang sama, jadi tanpa `requireAdmin` token customer bisa akses semua endpoint admin.
+
+Seed/kelola admin:
+
+```
+npm run grant-admin -- --list                 # lihat semua user + role
+npm run grant-admin -- admin@contoh.com       # jadikan admin
+npm run grant-admin -- --revoke user@contoh.com
+```
+
+**WAJIB** jalankan untuk semua akun CMS sebelum deploy — kalau belum, semua orang kena 403.
+
+## Env Vars — Security
+
+| Var | Wajib | Catatan |
+|---|---|---|
+| `INTERNAL_API_TOKEN` | ya | Shared secret self-call internal (AI tool → route admin). Generate: `openssl rand -hex 32`. Kosong = jalur internal mati (fail closed), tool AI gak jalan. |
+| `TELEGRAM_WEBHOOK_SECRET` | ya (kalau pakai Telegram) | Diverifikasi dari header `X-Telegram-Bot-Api-Secret-Token`. Set nilai sama saat `setWebhook?...&secret_token=<SECRET>`. |
+| `TELEGRAM_ALLOWED_CHAT_IDS` | ya (kalau pakai Telegram) | Allowlist chat id. **Kosong = tolak semua chat** (fail closed). |
+| `INVOICE_SECRET_KEY` | ya | Kunci AES untuk invoice code. Code baru punya `exp` 30 hari; code lama tanpa `exp` tetap valid (backward compat). |
+| `SWAGGER_USERNAME` / `SWAGGER_PASSWORD` | opsional | Jangan set di production = docs mati. |

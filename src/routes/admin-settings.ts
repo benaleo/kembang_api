@@ -1,5 +1,6 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { Bindings, Variables } from '../types';
+import { safeEqual } from '../lib/safe-compare';
 
 const PIN_KEY = 'PIN';
 const RESERVED_MASKED_KEYS = [PIN_KEY];
@@ -115,7 +116,9 @@ adminSettings.openapi(
       // No pin configured in DB — access is allowed
       if (!expected) return c.json({ valid: true }, 200);
 
-      return c.json({ valid: expected === pin }, 200);
+      // Timing-safe: `===` berhenti di karakter pertama yang beda, jadi PIN
+      // pendek bisa ditebak digit per digit dari selisih waktu respons.
+      return c.json({ valid: safeEqual(expected, pin) }, 200);
     } catch (err) {
       return c.json({ error: 'Internal server error' }, 500);
     }
@@ -149,6 +152,10 @@ adminSettings.openapi(
         description: 'Setting saved',
         content: { 'application/json': { schema: z.object({ success: z.boolean() }) } },
       },
+      403: {
+        description: 'Key dilindungi dan tidak bisa diubah lewat endpoint ini',
+        content: { 'application/json': { schema: z.object({ error: z.string() }) } },
+      },
       500: {
         description: 'Server error',
         content: { 'application/json': { schema: z.object({ error: z.string() }) } },
@@ -160,6 +167,14 @@ adminSettings.openapi(
       const supabase = c.get('supabase') as any;
       const { key } = c.req.valid('param');
       const { value, is_active } = c.req.valid('json');
+
+      // PIN adalah gerbang untuk halaman pengaturan, jadi tidak boleh ditimpa
+      // lewat endpoint upsert generik ini — kalau boleh, siapa pun yang tembus
+      // ke sini bisa menimpa PIN-nya sendiri lalu lolos verify-pin.
+      // Pengelolaan PIN dilakukan langsung di database.
+      if (RESERVED_MASKED_KEYS.includes(key)) {
+        return c.json({ error: `Setting '${key}' tidak bisa diubah lewat endpoint ini` }, 403);
+      }
 
       const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
       if (value !== undefined) payload.value = value;

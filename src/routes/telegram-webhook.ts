@@ -2,6 +2,8 @@ import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { Bindings, Variables } from '../types';
 import { sendMessage } from '../lib/telegram';
 import { runAiAgent } from '../lib/ai-agent';
+import { buildInternalToolContext } from '../lib/internal-call';
+import { safeEqual } from '../lib/safe-compare';
 
 const telegramWebhook = new OpenAPIHono<{ Bindings: Bindings; Variables: Variables }>();
 
@@ -35,6 +37,10 @@ telegramWebhook.openapi(
         description: 'OK',
         content: { 'application/json': { schema: z.object({ ok: z.literal(true) }) } },
       },
+      401: {
+        description: 'Secret token tidak valid',
+        content: { 'application/json': { schema: z.object({ error: z.string() }) } },
+      },
     },
   }),
   async (c) => {
@@ -43,6 +49,18 @@ telegramWebhook.openapi(
       if (!botToken) {
         console.error('TELEGRAM_BOT_TOKEN is not configured');
         return c.json({ ok: true as const }, 200);
+      }
+
+      // Verifikasi bahwa request memang dari Telegram, bukan siapa saja yang
+      // tahu URL webhook. Secret di-set waktu registrasi webhook:
+      //   setWebhook?url=...&secret_token=<TELEGRAM_WEBHOOK_SECRET>
+      // Kalau secret dikonfigurasi, header wajib cocok (fail closed).
+      const webhookSecret = c.env.TELEGRAM_WEBHOOK_SECRET;
+      if (webhookSecret) {
+        const provided = c.req.header('X-Telegram-Bot-Api-Secret-Token') || '';
+        if (!safeEqual(provided, webhookSecret)) {
+          return c.json({ error: 'Unauthorized' }, 401);
+        }
       }
 
       const allowedChatIds = c.env.TELEGRAM_ALLOWED_CHAT_IDS
@@ -60,7 +78,10 @@ telegramWebhook.openapi(
 
       const chatId = update.message.chat.id;
 
-      if (allowedChatIds.length > 0 && !allowedChatIds.includes(chatId)) {
+      // Fail closed: allowlist kosong = tidak ada yang diizinkan. Sebelumnya
+      // allowlist kosong berarti "siapa pun boleh", jadi salah konfigurasi
+      // langsung membuka akses agen AI ke seluruh data toko.
+      if (!allowedChatIds.includes(chatId)) {
         await sendMessage(botToken, chatId, 'Maaf, Anda tidak diizinkan mengakses bot ini.');
         return c.json({ ok: true as const }, 200);
       }
@@ -93,7 +114,15 @@ telegramWebhook.openapi(
       sessionMessages.push({ role: 'user', content: userText });
 
       // Run AI agent (non-streaming: collect all deltas)
-      const stream = await runAiAgent(sessionMessages, supabase, apiKey);
+      const stream = await runAiAgent(
+        sessionMessages,
+        supabase,
+        apiKey,
+        undefined,
+        c.env.GEOAPIFY_API_KEY,
+        c.env.MAPBOX_ACCESS_TOKEN,
+        buildInternalToolContext(c),
+      );
       const reader = stream.getReader();
       const decoder = new TextDecoder();
       let buffer = '';

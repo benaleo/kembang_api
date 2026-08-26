@@ -65,11 +65,19 @@ invoice.openapi(
   async (c) => {
     try {
       const { code } = c.req.valid('query');
-      const payload = await decryptInvoiceCode<{ transaction_id: number; customer_id: number }>(
-        c.env.INVOICE_SECRET_KEY,
-        code,
-      );
+      const payload = await decryptInvoiceCode<{
+        transaction_id: number;
+        customer_id: number;
+        exp?: number;
+      }>(c.env.INVOICE_SECRET_KEY, code);
       if (!payload?.transaction_id || !payload?.customer_id) {
+        return c.json({ error: 'Invalid or expired invoice code' }, 400);
+      }
+
+      // `exp` opsional supaya kode lama (yang dibuat sebelum expiry ada) tetap
+      // bisa dibuka. Kode baru selalu punya exp, jadi lama-lama semua kode
+      // beredar akan punya batas waktu.
+      if (typeof payload.exp === 'number' && payload.exp < Math.floor(Date.now() / 1000)) {
         return c.json({ error: 'Invalid or expired invoice code' }, 400);
       }
 

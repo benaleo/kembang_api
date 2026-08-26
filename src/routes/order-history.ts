@@ -5,6 +5,9 @@ import { encryptInvoiceCode } from '../lib/crypto';
 
 const orderHistory = new OpenAPIHono<{ Bindings: Bindings; Variables: Variables }>();
 
+/** Umur link invoice: 30 hari */
+const INVOICE_CODE_TTL_SECONDS = 30 * 24 * 60 * 60;
+
 const orderHistoryProductSchema = z.object({
   product_id: z.number().nullable(),
   name: z.string(),
@@ -115,6 +118,10 @@ orderHistory.openapi(
           invoice_code: await encryptInvoiceCode(c.env.INVOICE_SECRET_KEY, {
             transaction_id: t.id,
             customer_id: customer.id,
+            // Batas kedaluwarsa (epoch detik). Tanpa ini, link invoice yang
+            // pernah dibagikan berlaku selamanya. 30 hari cukup panjang untuk
+            // keperluan normal tapi membatasi umur link yang bocor.
+            exp: Math.floor(Date.now() / 1000) + INVOICE_CODE_TTL_SECONDS,
           }),
           status: t.status ?? 'approved',
           is_web_order: t.is_web_order ?? false,
