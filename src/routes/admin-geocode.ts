@@ -8,6 +8,18 @@ const placeSchema = z.object({
   formatted: z.string(),
 });
 
+const SHORT_LINK_HOSTS = new Set(['goo.gl', 'maps.app.goo.gl']);
+
+function isGoogleShortLink(rawUrl: string): boolean {
+  try {
+    const url = new URL(rawUrl);
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return false;
+    return SHORT_LINK_HOSTS.has(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Extract coordinates / place name from a Google Maps URL.
  * Handles: /@lat,lng,zoom, !3dlat!4dlng (pin), and /place/<name>/ patterns.
@@ -86,7 +98,11 @@ adminGeocode.openapi(
 
       // Follow short links (maps.app.goo.gl, goo.gl/maps) server-side —
       // browsers can't do this due to CORS.
-      if (/goo\.gl|maps\.app/.test(target)) {
+      //
+      // Dicek per-hostname, bukan substring: regex /goo\.gl|maps\.app/ juga
+      // match `https://evil.com/goo.gl/x`, jadi endpoint ini bisa dipakai
+      // sebagai URL-fetching proxy ke host mana pun.
+      if (isGoogleShortLink(target)) {
         const res = await fetch(target, { redirect: 'follow' });
         if (!res.ok) {
           return c.json({ error: `Failed to resolve short link: HTTP ${res.status}` }, 400);

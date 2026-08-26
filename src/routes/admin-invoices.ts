@@ -98,7 +98,9 @@ adminInvoices.openapi(
 
       const keyword = String(p.keyword ?? '').trim();
       const page = Math.max(1, Number(p.page) || 1);
-      const pageSize = Math.min(10000, Math.max(1, Number(p.page_size) || 10));
+      // Cap 200 (bukan 10000) — defense in depth biar satu request gak bisa
+  // narik hampir seluruh riwayat transaksi. CMS cuma pakai page_size 10.
+  const pageSize = Math.min(200, Math.max(1, Number(p.page_size) || 10));
       const dateStart = p.date_start ? String(p.date_start) : undefined;
       const dateEnd = p.date_end ? String(p.date_end) : undefined;
 

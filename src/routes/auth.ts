@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import type { Context } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { Bindings, Variables } from '../types';
+import { safeEqual } from '../lib/safe-compare';
 
 const auth = new OpenAPIHono<{ Bindings: Bindings; Variables: Variables }>();
 
@@ -74,13 +75,24 @@ const allowedOAuthRedirectOrigins = new Set([
   'https://kembang.langganan-ku.my.id',
 ]);
 
-function isAllowedOAuthRedirect(redirectTo: string): boolean {
+// Origin harus ada di allowlist DAN pathname harus persis salah satu yang
+// diizinkan — tanpa cek pathname, attacker bisa arahkan token ke halaman lain
+// di origin yang sama (mis. halaman yang echo query param ke pihak ketiga).
+function isAllowedRedirect(redirectTo: string, allowedPaths: string[]): boolean {
   try {
     const url = new URL(redirectTo);
-    return allowedOAuthRedirectOrigins.has(url.origin) && url.pathname === '/auth/callback';
+    return allowedOAuthRedirectOrigins.has(url.origin) && allowedPaths.includes(url.pathname);
   } catch {
     return false;
   }
+}
+
+function isAllowedOAuthRedirect(redirectTo: string): boolean {
+  return isAllowedRedirect(redirectTo, ['/auth/callback']);
+}
+
+function isAllowedRecoveryRedirect(redirectTo: string): boolean {
+  return isAllowedRedirect(redirectTo, ['/auth/confirm']);
 }
 
 function createRandomToken(): string {
@@ -380,6 +392,13 @@ auth.openapi(
     const supabase = c.get('supabase');
     const { email, redirect_to } = c.req.valid('json');
 
+    // Tanpa allowlist, attacker bisa minta reset untuk email korban dengan
+    // redirect_to ke domainnya sendiri: korban klik email yang asli, tapi
+    // token recovery-nya mendarat di halaman attacker → account takeover.
+    if (redirect_to !== undefined && !isAllowedRecoveryRedirect(redirect_to)) {
+      return c.json({ error: 'redirect_to tidak diizinkan' }, 400);
+    }
+
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: redirect_to,
     });
@@ -616,7 +635,7 @@ auth.openapi(
       return c.json(kvSession, 200);
     }
 
-    if (!cookieTicket || cookieTicket !== ticket) {
+    if (!cookieTicket || !safeEqual(cookieTicket, ticket)) {
       return c.json({ error: 'Invalid or expired OAuth ticket' }, 400);
     }
 
