@@ -48,6 +48,7 @@ const oauthUrlResponseSchema = z.object({
 });
 
 const OAUTH_REDIRECT_COOKIE = 'kembang_oauth_redirect';
+const OAUTH_HANDOFF_COOKIE = 'kembang_oauth_handoff';
 const OAUTH_TICKET_COOKIE = 'kembang_oauth_ticket';
 const OAUTH_SESSION_COOKIE_PREFIX = 'kembang_oauth_session_';
 const OAUTH_STORAGE_COOKIE_PREFIX = 'kembang_oauth_storage_';
@@ -488,23 +489,27 @@ auth.openapi(
 
     const handoffId = createRandomToken();
     const backingStorage: Record<string, string> = {};
-    const apiCallbackUrl = new URL(getOAuthApiCallbackUrl(c));
-    apiCallbackUrl.searchParams.set('handoff_id', handoffId);
-    apiCallbackUrl.searchParams.set('redirect_to', redirect_to);
+    // GoTrue matches redirect_to against the allow-list as a whole string, query included, so any
+    // query param here forces every entry to be a wildcard. Keep the URL bare and carry the
+    // handoff/redirect state in cookies instead — they survive the Google round trip (SameSite=Lax
+    // on a top-level GET).
+    const apiCallbackUrl = getOAuthApiCallbackUrl(c);
 
     const supabase = createOAuthSupabaseClient(c, backingStorage);
 
     setCookie(c, OAUTH_REDIRECT_COOKIE, encodeCookieValue(redirect_to), oauthCookieOptions(c));
+    setCookie(c, OAUTH_HANDOFF_COOKIE, handoffId, oauthCookieOptions(c));
 
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: apiCallbackUrl.toString(),
+        redirectTo: apiCallbackUrl,
       },
     });
 
     if (error || !data.url) {
       deleteOAuthCookie(c, OAUTH_REDIRECT_COOKIE);
+      deleteOAuthCookie(c, OAUTH_HANDOFF_COOKIE);
       return c.json({ error: error?.message || 'Failed to start Google OAuth' }, 400);
     }
 
@@ -529,13 +534,16 @@ auth.openapi(
   }),
   async (c) => {
     const code = c.req.query('code');
-    const handoffId = c.req.query('handoff_id');
+    // Cookie is the primary channel; the query params stay supported for in-flight logins started
+    // before the bare-callback-URL change.
+    const handoffId = getCookie(c, OAUTH_HANDOFF_COOKIE) || c.req.query('handoff_id');
     const redirectParam = c.req.query('redirect_to');
     const redirectCookie = getCookie(c, OAUTH_REDIRECT_COOKIE);
     const handoff = handoffId ? await getOAuthHandoff(c, handoffId) : null;
     const redirectTo = handoff?.redirect_to || (redirectCookie ? decodeCookieValue(redirectCookie) : redirectParam || null);
 
     deleteOAuthCookie(c, OAUTH_REDIRECT_COOKIE);
+    deleteOAuthCookie(c, OAUTH_HANDOFF_COOKIE);
 
     if (!redirectTo || !isAllowedOAuthRedirect(redirectTo)) {
       return c.json({ error: 'Invalid OAuth redirect URL' }, 400);
