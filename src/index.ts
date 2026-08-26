@@ -28,7 +28,7 @@ import adminAiModels from './routes/admin-ai-models';
 import adminNotes from './routes/admin-notes';
 import adminTransactionTemplates from './routes/admin-transaction-templates';
 import telegramWebhook from './routes/telegram-webhook';
-import { requireAuth } from './middleware/auth';
+import { requireAuth, requireAdmin } from './middleware/auth';
 import { rateLimit, secureHeaders, swaggerBasicAuth } from './middleware/security';
 import { Bindings, Variables } from './types';
 
@@ -75,13 +75,24 @@ app.use('/api/v1/auth/register', rateLimit({ name: 'auth-register', windowMs: 30
 app.use('/api/v1/auth/forgot-password', rateLimit({ name: 'auth-forgot', windowMs: 300_000, max: 5 }));
 app.use('/api/v1/auth/oauth/*', rateLimit({ name: 'auth-oauth', windowMs: 300_000, max: 10 }));
 
+// PIN settings itu secret pendek (rentan brute force) — batasi ketat: 10 / 5 menit / IP
+app.use('/api/v1/admin/settings/verify-pin', rateLimit({ name: 'settings-pin', windowMs: 300_000, max: 10 }));
+
+// Webhook telegram dikecualikan dari global limit, tapi tetap perlu batas
+// sendiri supaya endpoint publik ini tidak bisa dipakai buat menguras kuota AI.
+app.use('/telegram/webhook', rateLimit({ name: 'telegram-webhook', windowMs: 60_000, max: 30 }));
+
 // Swagger docs dilindungi Basic Auth (kredensial dari SWAGGER_USERNAME/SWAGGER_PASSWORD)
 app.use('/docs', swaggerBasicAuth());
 app.use('/openapi.json', swaggerBasicAuth());
 
 app.use('/api/v1/carts/*', requireAuth);
 app.use('/api/v1/addresses/*', requireAuth);
+// Urutan penting: requireAuth resolve identitas + role, requireAdmin baru
+// menegakkan otorisasinya. Tanpa requireAdmin, customer biasa (yang login lewat
+// endpoint /auth/login yang sama dengan CMS) bisa menembus seluruh route admin.
 app.use('/api/v1/admin/*', requireAuth);
+app.use('/api/v1/admin/*', requireAdmin);
 app.use('/api/v1/my-profile/*', requireAuth);
 app.use('/api/v1/order-history/*', requireAuth);
 app.use('/api/v1/checkout/*', requireAuth);

@@ -1,5 +1,6 @@
 import { Context, Next } from 'hono';
 import { Bindings, Variables } from '../types';
+import { safeEqual } from '../lib/safe-compare';
 
 // ---------------------------------------------------------------------------
 // Rate limiter (in-memory fixed window per isolate)
@@ -63,14 +64,6 @@ export function rateLimit(options: RateLimitOptions) {
 // ---------------------------------------------------------------------------
 // Basic auth untuk melindungi dokumentasi Swagger
 // ---------------------------------------------------------------------------
-
-/** Constant-time string compare biar tidak bocor lewat timing */
-function safeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let result = 0;
-  for (let i = 0; i < a.length; i++) result |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return result === 0;
-}
 
 export function swaggerBasicAuth() {
   return async (

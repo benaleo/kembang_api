@@ -1,10 +1,15 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { Bindings, Variables } from '../types';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, requireAdmin } from '../middleware/auth';
 import { runAiAgent } from '../lib/ai-agent';
+import { buildInternalToolContext } from '../lib/internal-call';
 
 const aiChat = new OpenAPIHono<{ Bindings: Bindings; Variables: Variables }>();
+// Admin-only: tool agen ini memanggil route /admin/* (data pelanggan, transaksi,
+// harga). Kalau cukup login biasa, customer bisa memakai chat sebagai perantara
+// untuk membaca seluruh data toko — endpoint-nya sendiri hanya dipakai CMS.
 aiChat.use('/*', requireAuth);
+aiChat.use('/*', requireAdmin);
 
 const chatMessageSchema = z.object({
   role: z.enum(['user', 'assistant']),
@@ -67,7 +72,15 @@ aiChat.openapi(
       );
     }
 
-    const stream = await runAiAgent(cleanMessages, supabase, apiKey, undefined, c.env.GEOAPIFY_API_KEY, c.env.MAPBOX_ACCESS_TOKEN);
+    const stream = await runAiAgent(
+      cleanMessages,
+      supabase,
+      apiKey,
+      undefined,
+      c.env.GEOAPIFY_API_KEY,
+      c.env.MAPBOX_ACCESS_TOKEN,
+      buildInternalToolContext(c),
+    );
 
     let assistantText = '';
     const decoder = new TextDecoder();

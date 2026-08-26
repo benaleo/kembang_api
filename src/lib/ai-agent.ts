@@ -1,4 +1,4 @@
-import { aiTools } from './ai-tools';
+import { aiTools, AiToolContext } from './ai-tools';
 
 const MAX_TOOL_ROUNDS = 10;
 // free-stack ignored the system prompt (responds as a generic Claude Code agent),
@@ -49,9 +49,10 @@ export async function runAiAgent(
   model?: string,
   geoapifyApiKey?: string,
   mapboxAccessToken?: string,
+  toolContext?: AiToolContext,
 ): Promise<ReadableStream<Uint8Array>> {
   const models = model ? [model, ...DEFAULT_MODELS.filter(m => m !== model)] : DEFAULT_MODELS;
-  return new ResponseStream(messages, supabase, apiKey, models, geoapifyApiKey, mapboxAccessToken).body as ReadableStream<Uint8Array>;
+  return new ResponseStream(messages, supabase, apiKey, models, geoapifyApiKey, mapboxAccessToken, toolContext).body as ReadableStream<Uint8Array>;
 }
 
 class ResponseStream {
@@ -65,6 +66,7 @@ class ResponseStream {
     private models: string[],
     private geoapifyApiKey?: string,
     private mapboxAccessToken?: string,
+    private toolContext?: AiToolContext,
   ) {
     this.body = new ReadableStream({
       start: (controller) => {
@@ -126,7 +128,7 @@ class ResponseStream {
                 if (!tool) {
                   toolResult = { error: `Tool tidak dikenal: ${tc.name}` };
                 } else {
-                  toolResult = await tool.execute(parsedArgs, this.supabase, this.geoapifyApiKey, this.mapboxAccessToken);
+                  toolResult = await tool.execute(parsedArgs, this.supabase, this.geoapifyApiKey, this.mapboxAccessToken, this.toolContext);
                 }
               } catch (e) {
                 toolResult = { error: e instanceof Error ? e.message : 'Tool execution error' };

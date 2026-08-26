@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "cf-typegen": "wrangler types"
+    "cf-typegen": "wrangler types",
+    "typecheck": "tsc --noEmit",
+    "grant-admin": "node scripts/grant-admin.mjs"
   },
   "dependencies": {
     "@hono/swagger-ui": "^0.5.0",

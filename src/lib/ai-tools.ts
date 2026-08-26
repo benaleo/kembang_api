@@ -1,27 +1,62 @@
 import { computeDeliveryCost } from './delivery-cost';
 
+/**
+ * Konfigurasi self-call internal.
+ *
+ * Tool AI memanggil balik route admin lewat HTTP (bukan query langsung) supaya
+ * business logic transaksi tidak terduplikasi. Konsekuensinya butuh dua hal
+ * yang dulu di-hardcode dan bikin fitur ini mati di production:
+ *  - `baseUrl`: origin service sebenarnya. Dulu 'http://localhost:8787', yang
+ *    tidak resolve di Cloudflare Workers.
+ *  - `internalToken`: shared secret dari env, bukan konstanta di repo.
+ */
+export interface AiToolContext {
+  baseUrl: string;
+  internalToken: string;
+}
+
 export interface AiTool {
   name: string;
   description: string;
   input_schema: Record<string, any>;
-  execute: (params: Record<string, any>, supabase: any, geoapifyApiKey?: string, mapboxAccessToken?: string) => Promise<Record<string, any>>;
+  execute: (
+    params: Record<string, any>,
+    supabase: any,
+    geoapifyApiKey?: string,
+    mapboxAccessToken?: string,
+    ctx?: AiToolContext,
+  ) => Promise<Record<string, any>>;
 }
 
-const API_BASE = 'http://localhost:8787';
+function requireCtx(ctx?: AiToolContext): AiToolContext {
+  if (!ctx?.baseUrl || !ctx?.internalToken) {
+    throw new Error(
+      'Konfigurasi internal belum lengkap: set API_PUBLIC_URL dan INTERNAL_API_TOKEN',
+    );
+  }
+  return ctx;
+}
 
-async function apiGet(path: string, params?: Record<string, string>): Promise<any> {
-  const url = new URL(`${API_BASE}${path}`);
+function internalHeaders(ctx: AiToolContext): Record<string, string> {
+  return {
+    'Content-Type': 'application/json',
+    'X-Internal-Token': ctx.internalToken,
+  };
+}
+
+async function apiGet(
+  ctx: AiToolContext | undefined,
+  path: string,
+  params?: Record<string, string>,
+): Promise<any> {
+  const cfg = requireCtx(ctx);
+  const url = new URL(`${cfg.baseUrl}${path}`);
   if (params) {
     for (const [k, v] of Object.entries(params)) {
       if (v !== undefined && v !== null) url.searchParams.set(k, v);
     }
   }
-  const res = await fetch(url.toString(), {
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Internal-Token': 'kembang-internal',
-    },
-  });
+  const res = await fetch(url.toString(), { headers: internalHeaders(cfg) });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     throw new Error(`API ${res.status}: ${body.slice(0, 200)}`);
@@ -29,13 +64,16 @@ async function apiGet(path: string, params?: Record<string, string>): Promise<an
   return res.json();
 }
 
-async function apiPost(path: string, body: any): Promise<any> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Internal-Token': 'kembang-internal',
-    },
+async function apiSend(
+  ctx: AiToolContext | undefined,
+  method: 'POST' | 'PATCH',
+  path: string,
+  body: any,
+): Promise<any> {
+  const cfg = requireCtx(ctx);
+  const res = await fetch(`${cfg.baseUrl}${path}`, {
+    method,
+    headers: internalHeaders(cfg),
     body: JSON.stringify(body),
   });
   if (!res.ok) {
@@ -45,21 +83,11 @@ async function apiPost(path: string, body: any): Promise<any> {
   return res.json();
 }
 
-async function apiPatch(path: string, body: any): Promise<any> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Internal-Token': 'kembang-internal',
-    },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`API ${res.status}: ${text.slice(0, 200)}`);
-  }
-  return res.json();
-}
+const apiPost = (ctx: AiToolContext | undefined, path: string, body: any) =>
+  apiSend(ctx, 'POST', path, body);
+
+const apiPatch = (ctx: AiToolContext | undefined, path: string, body: any) =>
+  apiSend(ctx, 'PATCH', path, body);
 
 function formatRupiah(n: number): string {
   return `Rp ${n.toLocaleString('id-ID')}`;
@@ -76,9 +104,9 @@ export const aiTools: AiTool[] = [
       },
       required: ['keyword'],
     },
-    async execute(params) {
+    async execute(params, _supabase, _geo, _mapbox, ctx) {
       const { keyword } = params;
-      const data = await apiGet('/api/v1/admin/customers', { search: keyword });
+      const data = await apiGet(ctx, '/api/v1/admin/customers', { search: keyword });
       return {
         customers: (data?.data || []).map((c: any) => ({
           id: c.id,
@@ -104,12 +132,12 @@ export const aiTools: AiTool[] = [
       },
       required: ['name'],
     },
-    async execute(params) {
+    async execute(params, _supabase, _geo, _mapbox, ctx) {
       const { name, phone, address, place, address_note } = params;
       if (!name || !name.trim()) {
         return { error: 'Nama pelanggan wajib diisi' };
       }
-      const data = await apiPost('/api/v1/admin/customers', {
+      const data = await apiPost(ctx, '/api/v1/admin/customers', {
         name: name.trim(),
         phone: phone || null,
         address: address || null,
@@ -145,7 +173,7 @@ export const aiTools: AiTool[] = [
       },
       required: ['customer_id'],
     },
-    async execute(params) {
+    async execute(params, _supabase, _geo, _mapbox, ctx) {
       const { customer_id, ...updates } = params;
       if (!customer_id) {
         return { error: 'customer_id wajib diisi' };
@@ -157,7 +185,7 @@ export const aiTools: AiTool[] = [
       if (Object.keys(clean).length === 0) {
         return { error: 'Tidak ada field yang akan diubah' };
       }
-      const data = await apiPatch(`/api/v1/admin/customers/${customer_id}`, clean);
+      const data = await apiPatch(ctx, `/api/v1/admin/customers/${customer_id}`, clean);
       return {
         success: true,
         customer: {
@@ -177,8 +205,8 @@ export const aiTools: AiTool[] = [
       type: 'object',
       properties: {},
     },
-    async execute() {
-      const data = await apiGet('/api/v1/admin/products');
+    async execute(_params, _supabase, _geo, _mapbox, ctx) {
+      const data = await apiGet(ctx, '/api/v1/admin/products');
       return {
         products: (data?.data || []).map((p: any) => ({
           id: p.id,
@@ -216,12 +244,12 @@ export const aiTools: AiTool[] = [
       },
       required: ['date', 'customer_id', 'products'],
     },
-    async execute(params) {
+    async execute(params, _supabase, _geo, _mapbox, ctx) {
       const { date, customer_id, note, products } = params;
       if (!products || products.length === 0) {
         return { error: 'Pesanan harus memiliki minimal 1 produk' };
       }
-      const data = await apiPost('/api/v1/admin/transactions', {
+      const data = await apiPost(ctx, '/api/v1/admin/transactions', {
         date,
         customer_id,
         note: note || '',
@@ -244,9 +272,9 @@ export const aiTools: AiTool[] = [
       },
       required: ['date'],
     },
-    async execute(params) {
+    async execute(params, _supabase, _geo, _mapbox, ctx) {
       const { date } = params;
-      const data = await apiGet('/api/v1/admin/transactions', { date });
+      const data = await apiGet(ctx, '/api/v1/admin/transactions', { date });
       return {
         orders: (data?.data || []).map((t: any) => ({
           id: t.id,
@@ -271,9 +299,9 @@ export const aiTools: AiTool[] = [
       },
       required: ['latitude', 'longitude'],
     },
-    async execute(params) {
+    async execute(params, _supabase, _geo, _mapbox, ctx) {
       const { latitude, longitude } = params;
-      const data = await apiPost('/api/v1/admin/distance', { latitude, longitude });
+      const data = await apiPost(ctx, '/api/v1/admin/distance', { latitude, longitude });
       if (data.error) return { error: data.error };
       return { distance_km: data.distance };
     },
