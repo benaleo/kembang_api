@@ -67,7 +67,19 @@ const upsertRoutesBodySchema = z.object({
   parent_routes: z.array(z.number()).min(1),
   name: z.string().optional().nullable(),
   time: z.string().optional().nullable(),
+  driver_name: z.string().optional().nullable(),
+  distances: z.number().optional().nullable(),
 });
+
+const calcRouteTotal = (distances?: number | null) => {
+  if (typeof distances !== 'number' || Number.isNaN(distances)) {
+    return null;
+  }
+
+  return distances * 3000;
+};
+
+const hasValidDistance = (distances?: number | null) => typeof distances === 'number' && !Number.isNaN(distances);
 
 adminTransactionDeliveries.openapi(
   createRoute({
@@ -106,9 +118,20 @@ adminTransactionDeliveries.openapi(
       const supabase = c.get('supabase') as any;
       const body = c.req.valid('json');
 
+      const routeFields = hasValidDistance(body.distances)
+        ? {
+            distances: body.distances,
+            total: calcRouteTotal(body.distances),
+          }
+        : {};
+
       const extraFields = {
         ...(body.name !== undefined ? { name: body.name } : {}),
         ...(body.time !== undefined && body.time !== null ? { time: body.time } : {}),
+        ...(body.driver_name !== undefined && body.driver_name !== null
+          ? { driver_name: body.driver_name }
+          : {}),
+        ...routeFields,
       };
 
       const results: Array<{ success: boolean; date: string; parent: number; message: string }> = [];
