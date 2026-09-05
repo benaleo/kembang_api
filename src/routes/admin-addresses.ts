@@ -34,7 +34,7 @@ const addressSchema = z.object({
   updated_at: z.string(),
 });
 
-// GET - List customer's addresses (admin)
+// GET - List customer's addresses plus addresses that are available globally (admin)
 adminAddresses.openapi(
   createRoute({
     method: 'get',
@@ -61,7 +61,7 @@ adminAddresses.openapi(
     const { data, error } = await supabase
       .from('customer_addresses')
       .select('*')
-      .eq('customer_id', customerId)
+      .or(`customer_id.eq.${customerId},and(customer_id.is.null,user_id.is.null)`)
       .order('is_default', { ascending: false })
       .order('created_at', { ascending: false });
 
