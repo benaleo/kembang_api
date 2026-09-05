@@ -178,9 +178,10 @@ export async function computeDeliveryCost(
   const totalCost = Math.max(10000, Math.ceil((totalDistanceKm * 3000) / 1000) * 1000);
 
   // 7. Upsert transaction_deliveries record (UNIQUE on (date, parent))
+  const routeName = `ROUTE ${route}`;
   const upsertData = {
-    name: `Route ${route}`,
-    driver_name: '',
+    name: routeName,
+    driver_name: routeName,
     time: '',
     date,
     parent: route,

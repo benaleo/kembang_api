@@ -131,11 +131,13 @@ adminTransactionDeliveries.openapi(
             ? { total: calcRouteTotal(roundedDistance) }
             : {}),
       };
+      const hasName = typeof body.name === 'string' && body.name.trim() !== '';
+      const hasDriverName = typeof body.driver_name === 'string' && body.driver_name.trim() !== '';
 
       const extraFields = {
-        ...(body.name !== undefined ? { name: body.name } : {}),
+        ...(hasName ? { name: body.name } : {}),
         ...(body.time !== undefined && body.time !== null ? { time: body.time } : {}),
-        ...(body.driver_name !== undefined && body.driver_name !== null
+        ...(hasDriverName
           ? { driver_name: body.driver_name }
           : {}),
         ...routeFields,
@@ -145,18 +147,27 @@ adminTransactionDeliveries.openapi(
 
       for (const date of body.dates) {
         for (const parentRoute of body.parent_routes) {
+          const routeName = hasName ? body.name! : `ROUTE ${parentRoute}`;
           const { data: existingRecords, error: fetchError } = await supabase
             .from('transaction_deliveries')
-            .select('id')
+            .select('id, driver_name')
             .eq('date', date)
             .eq('parent', parentRoute);
 
           if (fetchError) return c.json({ error: fetchError.message }, 500);
 
           if (existingRecords && existingRecords.length > 0) {
+            const updateFields = {
+              ...extraFields,
+              ...(!hasDriverName
+                ? existingRecords.some((record: { driver_name: string | null }) => !record.driver_name?.trim())
+                  ? { driver_name: routeName }
+                  : {}
+                : {}),
+            };
             const { error: updateError, count } = await supabase
               .from('transaction_deliveries')
-              .update({ ...extraFields })
+              .update(updateFields)
               .eq('date', date)
               .eq('parent', parentRoute);
 
@@ -169,7 +180,8 @@ adminTransactionDeliveries.openapi(
             });
           } else {
             const newRecord = {
-              name: `Route ${parentRoute}`,
+              name: routeName,
+              driver_name: hasDriverName ? body.driver_name : routeName,
               time: '00:00',
               date,
               parent: parentRoute,
