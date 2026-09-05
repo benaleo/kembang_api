@@ -3,6 +3,8 @@ import { geocodeAddress, getMapboxMatrix } from './gomaps';
 // Origin: toko (Jl. Kepodang, Rempoa, Tangerang Selatan)
 const ORIGIN = { lat: -6.292556760455276, lng: 106.75487235394468 };
 
+const roundToOneDecimal = (value: number) => Math.round(value * 10) / 10;
+
 export interface DeliveryCostItem {
   transaction_id: number;
   customer_id: number;
@@ -182,7 +184,7 @@ export async function computeDeliveryCost(
     time: '',
     date,
     parent: route,
-    distances: totalDistanceKm < 1 ? 1 : totalDistanceKm,
+    distances: Math.max(1, roundToOneDecimal(totalDistanceKm)),
     total: totalCost,
   };
 

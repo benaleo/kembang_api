@@ -69,6 +69,7 @@ const upsertRoutesBodySchema = z.object({
   time: z.string().optional().nullable(),
   driver_name: z.string().optional().nullable(),
   distances: z.number().optional().nullable(),
+  total: z.number().optional().nullable(),
 });
 
 const calcRouteTotal = (distances?: number | null) => {
@@ -80,6 +81,7 @@ const calcRouteTotal = (distances?: number | null) => {
 };
 
 const hasValidDistance = (distances?: number | null) => typeof distances === 'number' && !Number.isNaN(distances);
+const roundToOneDecimal = (distance: number) => Math.round(distance * 10) / 10;
 
 adminTransactionDeliveries.openapi(
   createRoute({
@@ -118,12 +120,17 @@ adminTransactionDeliveries.openapi(
       const supabase = c.get('supabase') as any;
       const body = c.req.valid('json');
 
-      const routeFields = hasValidDistance(body.distances)
-        ? {
-            distances: body.distances,
-            total: calcRouteTotal(body.distances),
-          }
-        : {};
+      const hasDistance = hasValidDistance(body.distances);
+      const hasTotal = hasValidDistance(body.total);
+      const roundedDistance = hasDistance ? roundToOneDecimal(body.distances!) : null;
+      const routeFields = {
+        ...(hasDistance ? { distances: roundedDistance } : {}),
+        ...(hasTotal
+          ? { total: body.total }
+          : hasDistance
+            ? { total: calcRouteTotal(roundedDistance) }
+            : {}),
+      };
 
       const extraFields = {
         ...(body.name !== undefined ? { name: body.name } : {}),
