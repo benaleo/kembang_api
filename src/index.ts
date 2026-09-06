@@ -44,7 +44,7 @@ app.use('*', cors({
     'https://kembang.langganan-ku.my.id',
   ],
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization'],
+  allowHeaders: ['Content-Type', 'Authorization', 'X-Login-Device'],
   credentials: true
 }));
 
@@ -68,9 +68,8 @@ app.use('/api/*', async (c, next) => {
 });
 
 // Throttle ketat untuk endpoint auth (brute force protection):
-// login & register: 10 / 5 menit / IP, forgot-password: 5 / 5 menit / IP,
+// register: 10 / 5 menit / IP, forgot-password: 5 / 5 menit / IP,
 // OAuth: 10 / 5 menit / IP untuk mencegah abuse provider redirect/session handoff.
-app.use('/api/v1/auth/login', rateLimit({ name: 'auth-login', windowMs: 300_000, max: 10 }));
 app.use('/api/v1/auth/register', rateLimit({ name: 'auth-register', windowMs: 300_000, max: 10 }));
 app.use('/api/v1/auth/forgot-password', rateLimit({ name: 'auth-forgot', windowMs: 300_000, max: 5 }));
 app.use('/api/v1/auth/oauth/*', rateLimit({ name: 'auth-oauth', windowMs: 300_000, max: 10 }));

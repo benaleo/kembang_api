@@ -56,6 +56,64 @@ const OAUTH_STORAGE_COOKIE_PREFIX = 'kembang_oauth_storage_';
 const OAUTH_HANDOFF_KV_PREFIX = 'oauth_handoff:';
 const OAUTH_SESSION_KV_PREFIX = 'oauth_session:';
 const OAUTH_COOKIE_MAX_AGE = 10 * 60;
+const LOGIN_FAILURE_LIMIT = 5;
+const LOGIN_LOCKOUT_SECONDS = 5 * 60;
+const LOGIN_RATE_LIMIT_PREFIX = 'auth_login_attempts:';
+
+type LoginAttemptState = {
+  failures: number;
+  lockedUntil: number;
+};
+
+function getLoginAttemptKeys(c: Context<{ Bindings: Bindings; Variables: Variables }>): string[] {
+  const ip = c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For')?.split(',')[0]?.trim() || 'unknown';
+  const device = c.req.header('X-Login-Device')?.trim();
+  return [...new Set([
+    `${LOGIN_RATE_LIMIT_PREFIX}ip:${ip}`,
+    ...(device ? [`${LOGIN_RATE_LIMIT_PREFIX}device:${device}`] : []),
+  ])];
+}
+
+async function getLoginAttemptState(c: Context<{ Bindings: Bindings; Variables: Variables }>, key: string) {
+  if (!c.env.AI_SESSIONS) return null;
+  const raw = await c.env.AI_SESSIONS.get(key);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as LoginAttemptState;
+  } catch {
+    return null;
+  }
+}
+
+async function isLoginLocked(c: Context<{ Bindings: Bindings; Variables: Variables }>): Promise<number> {
+  const now = Date.now();
+  const states = await Promise.all(getLoginAttemptKeys(c).map((key) => getLoginAttemptState(c, key)));
+  const lockedUntil = Math.max(...states.map((state) => state?.lockedUntil || 0));
+  return Math.max(0, lockedUntil - now);
+}
+
+async function recordLoginFailure(c: Context<{ Bindings: Bindings; Variables: Variables }>) {
+  if (!c.env.AI_SESSIONS) return 0;
+  const now = Date.now();
+  const lockouts = await Promise.all(getLoginAttemptKeys(c).map(async (key) => {
+    const state = await getLoginAttemptState(c, key);
+    const active = state && (state.lockedUntil === 0 || state.lockedUntil > now)
+      ? state
+      : { failures: 0, lockedUntil: 0 };
+    const failures = active.failures + 1;
+    const lockedUntil = failures >= LOGIN_FAILURE_LIMIT ? now + LOGIN_LOCKOUT_SECONDS * 1000 : 0;
+    await c.env.AI_SESSIONS.put(key, JSON.stringify({ failures, lockedUntil }), {
+      expirationTtl: LOGIN_LOCKOUT_SECONDS,
+    });
+    return lockedUntil;
+  }));
+  return Math.max(...lockouts) - now;
+}
+
+async function clearLoginFailures(c: Context<{ Bindings: Bindings; Variables: Variables }>) {
+  if (!c.env.AI_SESSIONS) return;
+  await Promise.all(getLoginAttemptKeys(c).map((key) => c.env.AI_SESSIONS.delete(key)));
+}
 
 type OAuthHandoff = {
   redirect_to: string;
@@ -313,17 +371,32 @@ auth.openapi(
       },
       400: { description: 'Invalid request', content: { 'application/json': { schema: errorResponse } } },
       401: { description: 'Invalid credentials', content: { 'application/json': { schema: errorResponse } } },
+      423: { description: 'Login temporarily locked', content: { 'application/json': { schema: errorResponse } } },
     },
   }),
   async (c) => {
     const supabase = c.get('supabase');
     const { email, password } = c.req.valid('json');
 
+    const retryAfterMs = await isLoginLocked(c);
+    if (retryAfterMs > 0) {
+      const retryAfter = Math.ceil(retryAfterMs / 1000);
+      c.header('Retry-After', String(retryAfter));
+      return c.json({ error: 'Too many failed login attempts. Please try again in 5 minutes.' }, 423);
+    }
+
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
-      return c.json({ error: error.message }, 401);
+      const lockoutMs = await recordLoginFailure(c);
+      if (lockoutMs > 0) {
+        c.header('Retry-After', String(Math.ceil(lockoutMs / 1000)));
+        return c.json({ error: 'Too many failed login attempts. Please try again in 5 minutes.' }, 423);
+      }
+      return c.json({ error: 'Email or password does not match. Please try again.' }, 401);
     }
+
+    await clearLoginFailures(c);
 
     return c.json({ user: data.user, session: data.session }, 200);
   },
