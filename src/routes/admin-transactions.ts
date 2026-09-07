@@ -72,6 +72,8 @@ const transactionSchema = z.object({
   name_alter: z.string().nullable(),
   note: z.string().nullable(),
   note_route: z.string().nullable(),
+  delivery_time_slot: z.string().nullable().optional(),
+  delivery_time_manual: z.string().nullable().optional(),
   route: z.number().nullable(),
   cost_delivery: z.number().nullable(),
   cost_order: z.number().nullable(),
@@ -122,6 +124,8 @@ function formatTransactionIndex(transaction: any) {
     name_alter: transaction.name_alter || '',
     note: transaction.note || '',
     note_route: transaction.note_route || '',
+    delivery_time_slot: transaction.delivery_time_slot || null,
+    delivery_time_manual: transaction.delivery_time_manual || null,
     route: transaction.route || 0,
     billed_at: transaction.billed_at || null,
     cost_delivery: transaction.cost_delivery || 0,
@@ -172,7 +176,7 @@ adminTransactions.openapi(
       let query = supabase
         .from('transactions' as any)
         .select(
-          `id, date, invoice, customer_id, customer_name, customer_phone, customer_address, customer_address_detail, customer_place, customer_geo, customer_distances, name_alter, note, note_route, route, cost_delivery, cost_order, billed_at, template_id, created_at, updated_at, is_web_order, status,
+          `id, date, invoice, customer_id, customer_name, customer_phone, customer_address, customer_address_detail, customer_place, customer_geo, customer_distances, name_alter, note, note_route, delivery_time_slot, delivery_time_manual, route, cost_delivery, cost_order, billed_at, template_id, created_at, updated_at, is_web_order, status,
           customer:customers (name, address, address_note, distance, phone, place),
           transaction_products (id, product_id, qty, parent_id, is_free, product:products (id, name, price))`,
           { count: 'exact' },
