@@ -73,14 +73,16 @@ const upsertRoutesBodySchema = z.object({
 });
 
 const calcRouteTotal = (distances?: number | null) => {
-  if (typeof distances !== 'number' || Number.isNaN(distances)) {
+  if (typeof distances !== 'number' || !Number.isFinite(distances)) {
     return null;
   }
 
-  return distances * 3000;
+  return Math.ceil((distances * 3000) / 1000) * 1000;
 };
 
-const hasValidDistance = (distances?: number | null) => typeof distances === 'number' && !Number.isNaN(distances);
+const hasValidDistance = (distances?: number | null) =>
+  typeof distances === 'number' && Number.isFinite(distances);
+const roundTotalToThousand = (total: number) => Math.ceil(total / 1000) * 1000;
 const roundToOneDecimal = (distance: number) => Math.round(distance * 10) / 10;
 
 adminTransactionDeliveries.openapi(
@@ -126,7 +128,7 @@ adminTransactionDeliveries.openapi(
       const routeFields = {
         ...(hasDistance ? { distances: roundedDistance } : {}),
         ...(hasTotal
-          ? { total: body.total }
+          ? { total: roundTotalToThousand(body.total!) }
           : hasDistance
             ? { total: calcRouteTotal(roundedDistance) }
             : {}),
