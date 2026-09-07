@@ -130,11 +130,14 @@ adminInvoices.openapi(
             address
           ),
           transaction_products (
+            id,
             product:products (
               name,
               price
             ),
-            qty
+            qty,
+            parent_id,
+            is_free
           )
         `,
           { count: 'exact' },
@@ -183,11 +186,16 @@ adminInvoices.openapi(
       const formatted = (data ?? []).map((t: any) => {
         const customer = Array.isArray(t.customer) ? t.customer[0] : t.customer;
         const products = (t.transaction_products ?? []).map((tp: any) => ({
+          id: tp.id,
           product: tp.product?.name || 'Unknown Product',
           price: tp.product?.price || 0,
           qty: tp.qty || 0,
+          parent_id: tp.parent_id ?? null,
+          is_free: tp.is_free === true,
         }));
-        const total = products.reduce((sum: number, item: any) => sum + item.price * item.qty, 0);
+        const total = products
+          .filter((item: any) => !item.is_free)
+          .reduce((sum: number, item: any) => sum + item.price * item.qty, 0);
 
         return {
           id: t.id,
