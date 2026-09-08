@@ -18,6 +18,9 @@ INVOICE_SECRET_KEY=
 # Kalau kosong, jalur internal mati total (fail closed) dan tool AI tidak jalan.
 INTERNAL_API_TOKEN=
 
+# Secret Vercel Deploy Hook untuk rebuild kembang_web setelah landing page dipublish.
+VERCEL_DEPLOY_HOOK_URL=
+
 # Geoapify (geocoding)
 GEOAPIFY_API_KEY=
 

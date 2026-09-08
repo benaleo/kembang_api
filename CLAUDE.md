@@ -65,4 +65,5 @@ npm run grant-admin -- --revoke user@contoh.com
 | `TELEGRAM_WEBHOOK_SECRET` | ya (kalau pakai Telegram) | Diverifikasi dari header `X-Telegram-Bot-Api-Secret-Token`. Set nilai sama saat `setWebhook?...&secret_token=<SECRET>`. |
 | `TELEGRAM_ALLOWED_CHAT_IDS` | ya (kalau pakai Telegram) | Allowlist chat id. **Kosong = tolak semua chat** (fail closed). |
 | `INVOICE_SECRET_KEY` | ya | Kunci AES untuk invoice code. Code baru punya `exp` 30 hari; code lama tanpa `exp` tetap valid (backward compat). |
+| `VERCEL_DEPLOY_HOOK_URL` | ya (re-deploy website) | Secret Deploy Hook untuk re-deploy manual SSG `kembang_web` dari Pengaturan CMS; jangan expose ke browser atau log. |
 | `SWAGGER_USERNAME` / `SWAGGER_PASSWORD` | opsional | Jangan set di production = docs mati. |

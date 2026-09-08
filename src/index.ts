@@ -28,6 +28,8 @@ import adminAiModels from './routes/admin-ai-models';
 import adminNotes from './routes/admin-notes';
 import adminTransactionTemplates from './routes/admin-transaction-templates';
 import telegramWebhook from './routes/telegram-webhook';
+import siteContent from './routes/site-content';
+import adminSiteContent from './routes/admin-site-content';
 import { requireAuth, requireAdmin } from './middleware/auth';
 import { rateLimit, secureHeaders, swaggerBasicAuth } from './middleware/security';
 import { Bindings, Variables } from './types';
@@ -76,6 +78,8 @@ app.use('/api/v1/auth/oauth/*', rateLimit({ name: 'auth-oauth', windowMs: 300_00
 
 // PIN settings itu secret pendek (rentan brute force) — batasi ketat: 10 / 5 menit / IP
 app.use('/api/v1/admin/settings/verify-pin', rateLimit({ name: 'settings-pin', windowMs: 300_000, max: 10 }));
+app.use('/api/v1/admin/site-content/home/publish', rateLimit({ name: 'site-content-publish', windowMs: 300_000, max: 10 }));
+app.use('/api/v1/admin/site-content/home/rebuild', rateLimit({ name: 'site-content-rebuild', windowMs: 300_000, max: 10 }));
 
 // Webhook telegram dikecualikan dari global limit, tapi tetap perlu batas
 // sendiri supaya endpoint publik ini tidak bisa dipakai buat menguras kuota AI.
@@ -167,6 +171,7 @@ deliveries.openapi(
 app.route('/orders', orders);
 app.route('/deliveries', deliveries);
 app.route('/api/v1/products', products);
+app.route('/api/v1/site-content', siteContent);
 app.route('/api/v1/carts', carts);
 app.route('/api/v1/addresses', addresses);
 app.route('/api/v1/admin/customers/:customerId/addresses', adminAddresses);
@@ -180,6 +185,7 @@ app.route('/api/v1/admin/distance', adminDistance);
 app.route('/api/v1/admin/geocode', adminGeocode);
 app.route('/api/v1/admin/transaction-deliveries', adminTransactionDeliveries);
 app.route('/api/v1/admin/settings', adminSettings);
+app.route('/api/v1/admin/site-content', adminSiteContent);
 app.route('/api/v1/admin/dashboard', adminDashboard);
 app.route('/api/v1/admin/invoices', adminInvoices);
 app.route('/api/v1/admin/ai-models', adminAiModels);

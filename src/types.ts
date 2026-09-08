@@ -13,6 +13,8 @@ export type Bindings = {
   MAPBOX_ACCESS_TOKEN: string;
   /** Shared secret untuk self-call internal (AI tools -> route admin). Wajib di production. */
   INTERNAL_API_TOKEN?: string;
+  /** Vercel Deploy Hook untuk re-deploy manual kembang_web dari pengaturan CMS. */
+  VERCEL_DEPLOY_HOOK_URL?: string;
   /** Secret token webhook Telegram (dicocokkan dengan X-Telegram-Bot-Api-Secret-Token) */
   TELEGRAM_WEBHOOK_SECRET?: string;
 };
