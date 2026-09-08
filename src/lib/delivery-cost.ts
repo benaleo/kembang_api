@@ -41,9 +41,16 @@ export async function computeDeliveryCost(
   //    (route 1 matches 1.1, 1.2, ... — floor() comparison)
   const { data: transactions, error: txError } = await (supabase
     .from('transactions')
-    .select('id, customer_id, route, cost_delivery')
+    .select('id, customer_id, route, cost_delivery, customer_geo, customer_address')
     .eq('date', date)) as {
-    data: Array<{ id: number; customer_id: number | null; route: number | null; cost_delivery: number | null }>;
+    data: Array<{
+      id: number;
+      customer_id: number | null;
+      route: number | null;
+      cost_delivery: number | null;
+      customer_geo: string | { lat: number; lng: number } | null;
+      customer_address: string | null;
+    }>;
     error: any;
   };
 
@@ -93,49 +100,60 @@ export async function computeDeliveryCost(
     }
   }
 
-  // 3. Geocode/parse koordinat per unique customer (urutan sesuai route ascending),
-  //    lalu hitung SEMUA jarak (radial toko→customer + sequential toko→stop1→stop2→...)
+  // 3. Setiap transaksi menyimpan snapshot alamatnya sendiri. Gunakan snapshot
+  //    tersebut supaya perubahan alamat default pelanggan tidak mengubah rute pesanan
+  //    yang sudah dibuat. Alamat default pelanggan hanya menjadi fallback data lama.
+  //    Lalu hitung SEMUA jarak (radial toko→stop + sequential toko→stop1→stop2→...)
   //    dalam SATU call Mapbox Directions Matrix (hindari N subrequest terpisah).
-  const geoByCustomer = new Map<number, { lat: number; lng: number }>();
-
-  const orderedCustomerIds = [
-    ...new Set(routeTx.map((t) => t.customer_id).filter((id): id is number => !!id)),
-  ];
-
-  for (const customerId of orderedCustomerIds) {
-    const addr = defaultByCustomer.get(customerId);
-    if (!addr) continue;
-
-    let geo: { lat: number; lng: number } | null = null;
-    if (typeof addr.recipient_geo === 'string') {
-      try {
-        const parsed = JSON.parse(addr.recipient_geo) as { lat: number; lng: number };
-        if (typeof parsed.lat === 'number' && typeof parsed.lng === 'number') geo = parsed;
-      } catch {}
-    } else if (addr.recipient_geo && typeof addr.recipient_geo.lat === 'number') {
-      geo = addr.recipient_geo;
+  const parseGeo = (value: unknown): { lat: number; lng: number } | null => {
+    const candidate = typeof value === 'string'
+      ? (() => { try { return JSON.parse(value); } catch { return null; } })()
+      : value;
+    if (
+      candidate &&
+      typeof candidate === 'object' &&
+      typeof (candidate as { lat?: unknown }).lat === 'number' &&
+      typeof (candidate as { lng?: unknown }).lng === 'number'
+    ) {
+      return candidate as { lat: number; lng: number };
     }
+    return null;
+  };
 
-    if (!geo && addr.recipient_address) {
+  const stops: Array<{ transactionId: number; geo: { lat: number; lng: number } }> = [];
+  for (const tx of routeTx) {
+    if (!tx.customer_id) continue;
+
+    const defaultAddress = defaultByCustomer.get(tx.customer_id);
+    let geo = parseGeo(tx.customer_geo);
+
+    if (!geo && tx.customer_address) {
       try {
-        geo = await geocodeAddress(geoapifyApiKey, addr.recipient_address);
+        geo = await geocodeAddress(geoapifyApiKey, tx.customer_address);
       } catch (e) {
-        console.error(`Error geocoding address for customer ${customerId}:`, e);
+        console.error(`Error geocoding address for transaction ${tx.id}:`, e);
       }
     }
 
-    if (geo) geoByCustomer.set(customerId, geo);
+    geo ??= parseGeo(defaultAddress?.recipient_geo);
+    if (!geo && defaultAddress?.recipient_address) {
+      try {
+        geo = await geocodeAddress(geoapifyApiKey, defaultAddress.recipient_address);
+      } catch (e) {
+        console.error(`Error geocoding fallback address for transaction ${tx.id}:`, e);
+      }
+    }
+
+    if (geo) stops.push({ transactionId: tx.id, geo });
   }
 
-  const geocodedCustomerIds = orderedCustomerIds.filter((id) => geoByCustomer.has(id));
-
-  const distanceKmByCustomer = new Map<number, number>();
+  const distanceKmByTransaction = new Map<number, number>();
   let totalRouteDistanceKm = 0;
 
-  if (geocodedCustomerIds.length > 0) {
-    const points = geocodedCustomerIds.map((id) => geoByCustomer.get(id)!);
+  if (stops.length > 0) {
+    const points = stops.map((stop) => stop.geo);
     const { radialKm, sequentialTotalKm } = await getMapboxMatrix(mapboxAccessToken, points);
-    geocodedCustomerIds.forEach((id, i) => distanceKmByCustomer.set(id, radialKm[i] ?? 0));
+    stops.forEach((stop, i) => distanceKmByTransaction.set(stop.transactionId, radialKm[i] ?? 0));
     totalRouteDistanceKm = sequentialTotalKm;
   }
 
@@ -143,8 +161,8 @@ export async function computeDeliveryCost(
 
   for (const tx of routeTx) {
     if (!tx.customer_id) continue;
-    if (!defaultByCustomer.has(tx.customer_id)) continue;
-    const distanceKm = distanceKmByCustomer.get(tx.customer_id) ?? 0;
+    if (!distanceKmByTransaction.has(tx.id)) continue;
+    const distanceKm = distanceKmByTransaction.get(tx.id) ?? 0;
 
     // 4. Sharing ongkir per transaksi
     const halfCost = Math.max(10000, Math.ceil((distanceKm * 3000) / 2));
