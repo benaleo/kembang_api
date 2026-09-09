@@ -24,5 +24,11 @@
       "id": "25fbf0e9b9424af98957baee293cf6d2",
       "preview_id": "25fbf0e9b9424af98957baee293cf6d2"
     }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "SITE_CONTENT_BUCKET",
+      "bucket_name": "kembang"
+    }
   ]
 }

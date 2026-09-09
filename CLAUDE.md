@@ -67,3 +67,9 @@ npm run grant-admin -- --revoke user@contoh.com
 | `INVOICE_SECRET_KEY` | ya | Kunci AES untuk invoice code. Code baru punya `exp` 30 hari; code lama tanpa `exp` tetap valid (backward compat). |
 | `VERCEL_DEPLOY_HOOK_URL` | ya (re-deploy website) | Secret Deploy Hook untuk re-deploy manual SSG `kembang_web` dari Pengaturan CMS; jangan expose ke browser atau log. |
 | `SWAGGER_USERNAME` / `SWAGGER_PASSWORD` | opsional | Jangan set di production = docs mati. |
+
+## R2 bindings
+
+| Binding | Bucket | Kegunaan |
+|---|---|---|
+| `SITE_CONTENT_BUCKET` | `kembang` | Gambar landing page yang diupload CMS dan disajikan melalui endpoint publik API. |

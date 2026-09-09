@@ -1,6 +1,7 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { Bindings, Variables } from '../types';
 import { landingPageContentSchema } from '../lib/site-content-schema';
+import { getSiteMediaUrl, SITE_MEDIA_KEY_PATTERN } from '../lib/site-media';
 
 const adminSiteContent = new OpenAPIHono<{ Bindings: Bindings; Variables: Variables }>();
 
@@ -201,16 +202,25 @@ adminSiteContent.post('/media', async (c) => {
   if (!(await hasValidImageSignature(file))) return c.json({ error: 'Isi file tidak sesuai format gambar' }, 400);
 
   const path = `landing/${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}.${extension}`;
-  const supabase = c.get('supabase');
-  const { error } = await supabase.storage.from('site-content').upload(path, file, {
-    contentType: file.type,
-    cacheControl: '31536000',
-    upsert: false,
-  });
-  if (error) return c.json({ error: error.message }, 500);
+  try {
+    await c.env.SITE_CONTENT_BUCKET.put(path, file.stream(), {
+      httpMetadata: {
+        contentType: file.type,
+        cacheControl: 'public, max-age=31536000, immutable',
+      },
+    });
+  } catch (error) {
+    console.error(JSON.stringify({
+      message: 'site media upload failed',
+      error: error instanceof Error ? error.message : String(error),
+    }));
+    return c.json({ error: 'Gagal menyimpan gambar website' }, 500);
+  }
 
-  const { data } = supabase.storage.from('site-content').getPublicUrl(path);
-  return c.json({ path, url: data.publicUrl }, 201);
+  return c.json({
+    path,
+    url: getSiteMediaUrl(c.req.url, c.env.API_PUBLIC_URL, path),
+  }, 201);
 });
 
 adminSiteContent.delete('/media', async (c) => {
@@ -220,7 +230,7 @@ adminSiteContent.delete('/media', async (c) => {
   } catch {
     return c.json({ error: 'Body JSON tidak valid' }, 400);
   }
-  const parsed = z.object({ path: z.string().regex(/^landing\/[a-zA-Z0-9/_-]+\.(jpg|png|webp|avif)$/) }).safeParse(input);
+  const parsed = z.object({ path: z.string().regex(SITE_MEDIA_KEY_PATTERN) }).safeParse(input);
   if (!parsed.success) return c.json({ error: 'Path media tidak valid' }, 400);
 
   const supabase = c.get('supabase');
@@ -234,8 +244,15 @@ adminSiteContent.delete('/media', async (c) => {
   const serialized = JSON.stringify(page ?? {});
   if (serialized.includes(parsed.data.path)) return c.json({ error: 'Media masih digunakan oleh landing page' }, 409);
 
-  const { error } = await supabase.storage.from('site-content').remove([parsed.data.path]);
-  if (error) return c.json({ error: error.message }, 500);
+  try {
+    await c.env.SITE_CONTENT_BUCKET.delete(parsed.data.path);
+  } catch (error) {
+    console.error(JSON.stringify({
+      message: 'site media delete failed',
+      error: error instanceof Error ? error.message : String(error),
+    }));
+    return c.json({ error: 'Gagal menghapus gambar website' }, 500);
+  }
   return c.json({ success: true }, 200);
 });
 

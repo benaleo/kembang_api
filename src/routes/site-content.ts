@@ -1,8 +1,36 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { Bindings, Variables } from '../types';
 import { landingPageContentSchema, sitePagePublicResponseSchema } from '../lib/site-content-schema';
+import { SITE_MEDIA_KEY_PATTERN } from '../lib/site-media';
 
 const siteContent = new OpenAPIHono<{ Bindings: Bindings; Variables: Variables }>();
+const SITE_MEDIA_PATH_PREFIX = '/api/v1/site-content/media/';
+
+siteContent.get('/media/*', async (c) => {
+  const key = c.req.path.startsWith(SITE_MEDIA_PATH_PREFIX)
+    ? c.req.path.slice(SITE_MEDIA_PATH_PREFIX.length)
+    : '';
+  if (!SITE_MEDIA_KEY_PATTERN.test(key)) return c.json({ error: 'Media tidak ditemukan' }, 404);
+
+  let object: R2ObjectBody | null;
+  try {
+    object = await c.env.SITE_CONTENT_BUCKET.get(key);
+  } catch (error) {
+    console.error(JSON.stringify({
+      message: 'site media read failed',
+      error: error instanceof Error ? error.message : String(error),
+    }));
+    return c.json({ error: 'Gagal memuat media website' }, 500);
+  }
+  if (!object) return c.json({ error: 'Media tidak ditemukan' }, 404);
+
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set('ETag', object.httpEtag);
+  headers.set('Cache-Control', object.httpMetadata?.cacheControl || 'public, max-age=31536000, immutable');
+  headers.set('X-Content-Type-Options', 'nosniff');
+  return new Response(object.body, { headers });
+});
 
 siteContent.openapi(
   createRoute({

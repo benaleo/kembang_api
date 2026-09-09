@@ -2,6 +2,8 @@ export type Bindings = {
   SUPABASE_URL: string;
   SUPABASE_SERVICE_ROLE_KEY: string;
   API_PUBLIC_URL?: string;
+  /** R2 bucket untuk gambar landing page dan aset website yang dikelola CMS. */
+  SITE_CONTENT_BUCKET: R2Bucket;
   OMNIROUTER_API_KEY: string;
   TELEGRAM_BOT_TOKEN: string;
   TELEGRAM_ALLOWED_CHAT_IDS: string;
