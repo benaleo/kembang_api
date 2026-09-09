@@ -31,13 +31,13 @@ export async function hasValidImageSignature(file: File): Promise<boolean> {
   return false;
 }
 
-export async function convertImageToWebp(images: ImagesBinding, file: File): Promise<ReadableStream<Uint8Array>> {
+export async function convertImageToWebp(images: ImagesBinding, file: File): Promise<ArrayBuffer> {
   const result = await images.input(file.stream()).output({
     format: WEBP_CONTENT_TYPE,
     quality: WEBP_QUALITY,
     anim: false,
   });
-  return result.image();
+  return result.response().arrayBuffer();
 }
 
 export function getSiteMediaUrl(requestUrl: string, apiPublicUrl: string | undefined, key: string): string {
