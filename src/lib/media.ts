@@ -8,6 +8,8 @@ const IMAGE_EXTENSIONS: Record<string, string> = {
 const UUID_PATTERN = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 
 export const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+export const WEBP_CONTENT_TYPE = 'image/webp';
+export const WEBP_QUALITY = 85;
 export const SITE_MEDIA_KEY_PATTERN = new RegExp(`^landing/\\d{4}-\\d{2}-\\d{2}/${UUID_PATTERN}\\.(jpg|png|webp|avif)$`);
 export const PRODUCT_IMAGE_KEY_PATTERN = new RegExp(`^products/\\d{4}-\\d{2}-\\d{2}/${UUID_PATTERN}\\.(jpg|png|webp|avif)$`);
 
@@ -27,6 +29,15 @@ export async function hasValidImageSignature(file: File): Promise<boolean> {
     return box.startsWith('ftyp') && (box.includes('avif') || box.includes('avis'));
   }
   return false;
+}
+
+export async function convertImageToWebp(images: ImagesBinding, file: File): Promise<ReadableStream<Uint8Array>> {
+  const result = await images.input(file.stream()).output({
+    format: WEBP_CONTENT_TYPE,
+    quality: WEBP_QUALITY,
+    anim: false,
+  });
+  return result.image();
 }
 
 export function getSiteMediaUrl(requestUrl: string, apiPublicUrl: string | undefined, key: string): string {

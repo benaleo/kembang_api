@@ -21,6 +21,9 @@
   "assets": {
     "directory": "./public"
   },
+  "images": {
+    "binding": "IMAGES"
+  },
   "kv_namespaces": [
     {
       "binding": "AI_SESSIONS",

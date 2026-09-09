@@ -75,4 +75,5 @@ npm run grant-admin -- --revoke user@contoh.com
 
 | Binding | Bucket | Kegunaan |
 |---|---|---|
-| `SITE_CONTENT_BUCKET` | `kembang` | Gambar landing page dan produk dari CMS. Binding memakai `remote: true` agar API lokal menulis ke bucket Cloudflare yang sama dengan custom domain publik. |
+| `SITE_CONTENT_BUCKET` | `kembang` | Gambar WebP landing page dan produk dari CMS. Binding memakai `remote: true` agar API lokal menulis ke bucket Cloudflare yang sama dengan custom domain publik. |
+| `IMAGES` | Cloudflare Images | Mengubah setiap JPEG, PNG, WebP, atau AVIF baru menjadi WebP kualitas 85 sebelum disimpan ke R2. |

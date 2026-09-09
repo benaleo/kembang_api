@@ -4,6 +4,8 @@ export type Bindings = {
   API_PUBLIC_URL?: string;
   /** R2 bucket untuk gambar landing page dan aset website yang dikelola CMS. */
   SITE_CONTENT_BUCKET: R2Bucket;
+  /** Cloudflare Images untuk mengubah seluruh upload gambar menjadi WebP. */
+  IMAGES: ImagesBinding;
   /** Public custom domain untuk mengubah object path R2 menjadi URL response. */
   R2_PUBLIC_URL: string;
   OMNIROUTER_API_KEY: string;

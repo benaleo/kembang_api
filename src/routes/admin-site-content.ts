@@ -2,11 +2,13 @@ import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { Bindings, Variables } from '../types';
 import { landingPageContentSchema } from '../lib/site-content-schema';
 import {
+  convertImageToWebp,
   getImageExtension,
   getSiteMediaUrl,
   hasValidImageSignature,
   MAX_IMAGE_SIZE,
   SITE_MEDIA_KEY_PATTERN,
+  WEBP_CONTENT_TYPE,
 } from '../lib/media';
 
 const adminSiteContent = new OpenAPIHono<{ Bindings: Bindings; Variables: Variables }>();
@@ -186,11 +188,12 @@ adminSiteContent.post('/media', async (c) => {
   if (file.size > MAX_IMAGE_SIZE) return c.json({ error: 'Ukuran gambar maksimal 5 MB' }, 400);
   if (!(await hasValidImageSignature(file))) return c.json({ error: 'Isi file tidak sesuai format gambar' }, 400);
 
-  const path = `landing/${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}.${extension}`;
+  const path = `landing/${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}.webp`;
   try {
-    await c.env.SITE_CONTENT_BUCKET.put(path, file.stream(), {
+    const webp = await convertImageToWebp(c.env.IMAGES, file);
+    await c.env.SITE_CONTENT_BUCKET.put(path, webp, {
       httpMetadata: {
-        contentType: file.type,
+        contentType: WEBP_CONTENT_TYPE,
         cacheControl: 'public, max-age=31536000, immutable',
       },
     });
