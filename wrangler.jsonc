@@ -31,7 +31,8 @@
   "r2_buckets": [
     {
       "binding": "SITE_CONTENT_BUCKET",
-      "bucket_name": "kembang"
+      "bucket_name": "kembang",
+      "remote": true
     }
   ]
 }

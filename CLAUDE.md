@@ -71,6 +71,8 @@ npm run grant-admin -- --revoke user@contoh.com
 
 ## R2 bindings
 
+`SITE_CONTENT_BUCKET` memakai remote binding agar upload dari API lokal masuk ke bucket Cloudflare `kembang`, bukan penyimpanan simulasi Miniflare.
+
 | Binding | Bucket | Kegunaan |
 |---|---|---|
-| `SITE_CONTENT_BUCKET` | `kembang` | Gambar landing page yang diupload CMS dan disajikan melalui endpoint publik API. |
+| `SITE_CONTENT_BUCKET` | `kembang` | Gambar landing page dan produk dari CMS. Binding memakai `remote: true` agar API lokal menulis ke bucket Cloudflare yang sama dengan custom domain publik. |
