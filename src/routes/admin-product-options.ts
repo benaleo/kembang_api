@@ -1,5 +1,6 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { Bindings, Variables } from '../types';
+import { getR2PublicUrl } from '../lib/media';
 
 const adminProductOptions = new OpenAPIHono<{ Bindings: Bindings; Variables: Variables }>();
 
@@ -64,7 +65,7 @@ adminProductOptions.openapi(
 
       const data = list.map((row) => ({
         ...row,
-        image_url: row.image_url ?? `${origin}/default.webp`,
+        image_url: getR2PublicUrl(row.image_url, c.env.R2_PUBLIC_URL) ?? `${origin}/default.webp`,
       }));
 
       return c.json({ data }, 200);

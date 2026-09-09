@@ -1,14 +1,6 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
-import { createClient } from '@supabase/supabase-js';
-
-type Bindings = {
-  SUPABASE_URL: string;
-  SUPABASE_SERVICE_ROLE_KEY: string;
-};
-
-type Variables = {
-  supabase: ReturnType<typeof createClient>;
-};
+import { getR2PublicUrl } from '../lib/media';
+import { Bindings, Variables } from '../types';
 
 const products = new OpenAPIHono<{ Bindings: Bindings; Variables: Variables }>();
 
@@ -70,7 +62,7 @@ products.openapi(
       name: row.name,
       price: row.price,
       price_now: row.price_now,
-      image_url: row.image_url ?? `${origin}/default.webp`,
+      image_url: getR2PublicUrl(row.image_url, c.env.R2_PUBLIC_URL) ?? `${origin}/default.webp`,
       category: row.category,
       is_combine: row.is_combine,
     }));

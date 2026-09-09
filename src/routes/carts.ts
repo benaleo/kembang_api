@@ -1,5 +1,6 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { Bindings, Variables } from '../types';
+import { getR2PublicUrl } from '../lib/media';
 
 const carts = new OpenAPIHono<{ Bindings: Bindings; Variables: Variables }>();
 
@@ -62,7 +63,12 @@ carts.openapi(
       product_id: row.product_id,
       quantity: row.quantity,
       created_at: row.created_at,
-      product: row.products ?? null,
+      product: row.products
+        ? {
+            ...row.products,
+            image_url: getR2PublicUrl(row.products.image_url, c.env.R2_PUBLIC_URL),
+          }
+        : null,
     }));
 
     return c.json(items, 200);

@@ -66,6 +66,7 @@ npm run grant-admin -- --revoke user@contoh.com
 | `TELEGRAM_ALLOWED_CHAT_IDS` | ya (kalau pakai Telegram) | Allowlist chat id. **Kosong = tolak semua chat** (fail closed). |
 | `INVOICE_SECRET_KEY` | ya | Kunci AES untuk invoice code. Code baru punya `exp` 30 hari; code lama tanpa `exp` tetap valid (backward compat). |
 | `VERCEL_DEPLOY_HOOK_URL` | ya (re-deploy website) | Secret Deploy Hook untuk re-deploy manual SSG `kembang_web` dari Pengaturan CMS; jangan expose ke browser atau log. |
+| `R2_PUBLIC_URL` | ya | Custom domain publik bucket R2 `kembang`; saat ini `https://file.langganan-ku.my.id`. Database tetap menyimpan object path tanpa domain. |
 | `SWAGGER_USERNAME` / `SWAGGER_PASSWORD` | opsional | Jangan set di production = docs mati. |
 
 ## R2 bindings

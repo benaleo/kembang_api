@@ -1,7 +1,7 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { Bindings, Variables } from '../types';
 import { landingPageContentSchema, sitePagePublicResponseSchema } from '../lib/site-content-schema';
-import { SITE_MEDIA_KEY_PATTERN } from '../lib/site-media';
+import { SITE_MEDIA_KEY_PATTERN } from '../lib/media';
 
 const siteContent = new OpenAPIHono<{ Bindings: Bindings; Variables: Variables }>();
 const SITE_MEDIA_PATH_PREFIX = '/api/v1/site-content/media/';

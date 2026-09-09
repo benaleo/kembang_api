@@ -1,7 +1,13 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { Bindings, Variables } from '../types';
 import { landingPageContentSchema } from '../lib/site-content-schema';
-import { getSiteMediaUrl, SITE_MEDIA_KEY_PATTERN } from '../lib/site-media';
+import {
+  getImageExtension,
+  getSiteMediaUrl,
+  hasValidImageSignature,
+  MAX_IMAGE_SIZE,
+  SITE_MEDIA_KEY_PATTERN,
+} from '../lib/media';
 
 const adminSiteContent = new OpenAPIHono<{ Bindings: Bindings; Variables: Variables }>();
 
@@ -169,36 +175,15 @@ adminSiteContent.openapi(
   },
 );
 
-const MIME_EXTENSIONS: Record<string, string> = {
-  'image/jpeg': 'jpg',
-  'image/png': 'png',
-  'image/webp': 'webp',
-  'image/avif': 'avif',
-};
-
-async function hasValidImageSignature(file: File): Promise<boolean> {
-  const bytes = new Uint8Array(await file.slice(0, 16).arrayBuffer());
-  if (file.type === 'image/jpeg') return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
-  if (file.type === 'image/png') return bytes.slice(0, 8).every((value, index) => value === [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a][index]);
-  if (file.type === 'image/webp') {
-    return String.fromCharCode(...bytes.slice(0, 4)) === 'RIFF' && String.fromCharCode(...bytes.slice(8, 12)) === 'WEBP';
-  }
-  if (file.type === 'image/avif') {
-    const box = String.fromCharCode(...bytes.slice(4, 12));
-    return box.startsWith('ftyp') && (box.includes('avif') || box.includes('avis'));
-  }
-  return false;
-}
-
 adminSiteContent.post('/media', async (c) => {
   const contentLength = Number(c.req.header('content-length') || 0);
   if (contentLength > 6 * 1024 * 1024) return c.json({ error: 'Ukuran request terlalu besar' }, 413);
   const body = await c.req.parseBody();
   const file = body.file;
   if (!(file instanceof File)) return c.json({ error: 'File gambar wajib diisi' }, 400);
-  const extension = MIME_EXTENSIONS[file.type];
+  const extension = getImageExtension(file.type);
   if (!extension) return c.json({ error: 'Format gambar harus JPEG, PNG, WebP, atau AVIF' }, 400);
-  if (file.size > 5 * 1024 * 1024) return c.json({ error: 'Ukuran gambar maksimal 5 MB' }, 400);
+  if (file.size > MAX_IMAGE_SIZE) return c.json({ error: 'Ukuran gambar maksimal 5 MB' }, 400);
   if (!(await hasValidImageSignature(file))) return c.json({ error: 'Isi file tidak sesuai format gambar' }, 400);
 
   const path = `landing/${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}.${extension}`;
