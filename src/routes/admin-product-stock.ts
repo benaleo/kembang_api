@@ -25,6 +25,23 @@ const createProductStockSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
 
+const bulkCreateProductStockSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  items: z
+    .array(
+      z.object({
+        product_id: z.number().int().positive(),
+        stocks: z.number().int().positive(),
+      }),
+    )
+    .min(1)
+    .max(100)
+    .refine(
+      (items) => new Set(items.map((item) => item.product_id)).size === items.length,
+      'Produk tidak boleh duplikat',
+    ),
+});
+
 const invalidateProductStockSchema = z.object({
   message: z.string().trim().min(1).max(500),
 });
@@ -74,6 +91,77 @@ adminProductStock.openapi(
         error: error instanceof Error ? error.message : String(error),
       }));
       return c.json({ error: 'Gagal memuat stock produk' }, 500);
+    }
+  },
+);
+
+adminProductStock.openapi(
+  createRoute({
+    method: 'post',
+    path: '/bulk',
+    tags: ['Admin Product Stock'],
+    request: {
+      body: { content: { 'application/json': { schema: bulkCreateProductStockSchema } } },
+    },
+    responses: {
+      201: {
+        description: 'Product stocks created in bulk',
+        content: {
+          'application/json': {
+            schema: z.object({
+              data: z.array(productStockSchema),
+              created: z.number().int(),
+            }),
+          },
+        },
+      },
+      400: {
+        description: 'One or more products are invalid',
+        content: { 'application/json': { schema: z.object({ error: z.string() }) } },
+      },
+      500: {
+        description: 'Server error',
+        content: { 'application/json': { schema: z.object({ error: z.string() }) } },
+      },
+    },
+  }),
+  async (c) => {
+    const body = c.req.valid('json');
+    const supabase = c.get('supabase');
+    const productIds = body.items.map((item) => item.product_id);
+
+    try {
+      const { data: products, error: productError } = await supabase
+        .from('products')
+        .select('id')
+        .in('id', productIds)
+        .eq('is_active', true)
+        .is('deleted_at', null);
+
+      if (productError) return c.json({ error: productError.message }, 500);
+      if ((products?.length ?? 0) !== productIds.length) {
+        return c.json({ error: 'Satu atau lebih produk tidak ditemukan atau tidak aktif' }, 400);
+      }
+
+      const rows = body.items.map((item) => ({
+        product_id: item.product_id,
+        stocks: item.stocks,
+        date: body.date,
+      }));
+      const { data, error } = await supabase
+        .from('product_stocks')
+        .insert(rows)
+        .select('id, product_id, stocks, date, is_valid, message, created_at');
+
+      if (error) return c.json({ error: error.message }, 500);
+      return c.json({ data: data ?? [], created: data?.length ?? 0 }, 201);
+    } catch (error) {
+      console.error(JSON.stringify({
+        message: 'bulk product stock create failed',
+        productIds,
+        error: error instanceof Error ? error.message : String(error),
+      }));
+      return c.json({ error: 'Gagal menambah bulk stock produk' }, 500);
     }
   },
 );
