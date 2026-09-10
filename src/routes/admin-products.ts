@@ -39,6 +39,10 @@ const productSchema = z.object({
   updated_at: z.string(),
 });
 
+const productListSchema = productSchema.extend({
+  stock_total: z.number().int(),
+});
+
 const listProductsQuerySchema = z.object({
   keyword: z.string().optional(),
   category: z.string().optional(),
@@ -51,6 +55,19 @@ function withPublicImageUrl(product: any, publicBaseUrl: string) {
     ...product,
     image_public_url: getR2PublicUrl(product.image_url, publicBaseUrl),
   };
+}
+
+async function getValidStockTotals(supabase: any, productIds: number[]) {
+  const totals = new Map<number, number>();
+  if (productIds.length === 0) return totals;
+
+  const { data, error } = await supabase.rpc('get_product_valid_stock_totals', {
+    p_product_ids: productIds,
+  });
+
+  if (error) throw error;
+  for (const row of data ?? []) totals.set(Number(row.product_id), Number(row.stock_total));
+  return totals;
 }
 
 adminProducts.post('/media', async (c) => {
@@ -103,7 +120,7 @@ adminProducts.openapi(
         description: 'List products',
         content: {
           'application/json': {
-            schema: z.object({ data: z.array(productSchema), total: z.number() }),
+            schema: z.object({ data: z.array(productListSchema), total: z.number() }),
           },
         },
       },
@@ -139,8 +156,17 @@ adminProducts.openapi(
         return c.json({ error: error.message }, 500);
       }
 
+      const products = data ?? [];
+      const stockTotals = await getValidStockTotals(
+        supabase,
+        products.map((product: any) => product.id),
+      );
+
       return c.json({
-        data: (data ?? []).map((product: any) => withPublicImageUrl(product, c.env.R2_PUBLIC_URL)),
+        data: products.map((product: any) => ({
+          ...withPublicImageUrl(product, c.env.R2_PUBLIC_URL),
+          stock_total: stockTotals.get(product.id) ?? 0,
+        })),
         total: count ?? 0,
       }, 200);
     } catch (err) {
