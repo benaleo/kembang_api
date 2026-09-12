@@ -45,7 +45,15 @@ products.openapi(
       .select('id, name, price, price_now, image_url, category, is_combine')
       .eq('is_active', true);
 
-    if (category) q = q.eq('category', category);
+    if (category) {
+      const { data: categoryRow } = await supabase
+        .from('product_categories')
+        .select('id')
+        .eq('slug', category)
+        .maybeSingle();
+
+      q = categoryRow ? q.eq('product_category_id', categoryRow.id) : q.eq('category', category);
+    }
     if (search) q = q.ilike('name', `%${search}%`);
 
     const { data, error } = await q.order('price_now', { ascending: true, nullsFirst: false });

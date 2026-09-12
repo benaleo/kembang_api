@@ -9,6 +9,7 @@ import {
   PRODUCT_IMAGE_KEY_PATTERN,
   WEBP_CONTENT_TYPE,
 } from '../lib/media';
+import { generateUniqueSlug } from '../lib/slug';
 
 const adminProducts = new OpenAPIHono<{ Bindings: Bindings; Variables: Variables }>();
 
@@ -16,6 +17,7 @@ const productBodySchema = z.object({
   name: z.string(),
   code: z.string().nullable().optional(),
   category: z.string().nullable().optional(),
+  product_category_id: z.number().int().nullable().optional(),
   price: z.number().int().optional(),
   is_active: z.boolean().optional(),
   is_combine: z.boolean().optional(),
@@ -28,6 +30,8 @@ const productSchema = z.object({
   code: z.string().nullable(),
   name: z.string(),
   category: z.string().nullable(),
+  product_category_id: z.number().nullable(),
+  slug: z.string(),
   price: z.number(),
   is_active: z.boolean(),
   is_combine: z.boolean(),
@@ -55,6 +59,19 @@ function withPublicImageUrl(product: any, publicBaseUrl: string) {
     ...product,
     image_public_url: getR2PublicUrl(product.image_url, publicBaseUrl),
   };
+}
+
+async function generateUniqueProductSlug(supabase: any, name: string, excludeId?: number): Promise<string> {
+  return generateUniqueSlug(supabase, 'products', name, excludeId);
+}
+
+async function resolveCategoryName(supabase: any, productCategoryId: number): Promise<string | null> {
+  const { data } = await supabase
+    .from('product_categories')
+    .select('name')
+    .eq('id', productCategoryId)
+    .maybeSingle();
+  return data?.name ?? null;
 }
 
 async function getValidStockTotals(supabase: any, productIds: number[]) {
@@ -170,6 +187,12 @@ adminProducts.openapi(
         total: count ?? 0,
       }, 200);
     } catch (err) {
+      console.error(JSON.stringify({
+        message: 'admin product list failed',
+        error: err instanceof Error ? err.message : String(err),
+        page,
+        pageSize,
+      }));
       return c.json({ error: 'Internal server error' }, 500);
     }
   },
@@ -260,9 +283,15 @@ adminProducts.openapi(
     const supabase = c.get('supabase');
 
     try {
+      const slug = await generateUniqueProductSlug(supabase, body.name);
+      const category =
+        body.product_category_id != null
+          ? await resolveCategoryName(supabase, body.product_category_id)
+          : body.category ?? null;
+
       const { data, error } = await supabase
         .from('products')
-        .insert([body])
+        .insert([{ ...body, category, slug }])
         .select()
         .maybeSingle();
 
@@ -314,9 +343,22 @@ adminProducts.openapi(
     const supabase = c.get('supabase');
 
     try {
+      const updates: Record<string, unknown> = { ...body };
+
+      if (Object.prototype.hasOwnProperty.call(body, 'product_category_id')) {
+        updates.category =
+          body.product_category_id != null
+            ? await resolveCategoryName(supabase, body.product_category_id)
+            : null;
+      }
+
+      if (body.name) {
+        updates.slug = await generateUniqueProductSlug(supabase, body.name, id);
+      }
+
       const { data, error } = await supabase
         .from('products')
-        .update(body)
+        .update(updates)
         .eq('id', id)
         .select()
         .maybeSingle();
