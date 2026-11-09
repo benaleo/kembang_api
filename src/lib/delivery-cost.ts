@@ -5,6 +5,16 @@ const ORIGIN = { lat: -6.292556760455276, lng: 106.75487235394468 };
 
 const roundToOneDecimal = (value: number) => Math.round(value * 10) / 10;
 
+const originalDeliveryCost = (distanceKm: number) =>
+  Math.max(10000, Math.ceil(distanceKm * 3) * 1000);
+
+// porsi tiap transaksi dari total rute, minimal setengah biaya aslinya
+const sharingDeliveryCost = (originalCost: number, totalCost: number, totalOriginalCost: number) => {
+  if (totalOriginalCost <= 0) return originalCost;
+  const sharing = Math.ceil(((totalCost / totalOriginalCost) * originalCost) / 1000) * 1000;
+  return sharing < originalCost / 2 ? Math.ceil(originalCost / 2 / 1000) * 1000 : sharing;
+};
+
 export interface DeliveryCostItem {
   transaction_id: number;
   customer_id: number;
@@ -21,10 +31,11 @@ export interface DeliveryCostResult {
 /**
  * Hitung biaya pengiriman + upah driver untuk satu route.
  *
- * Formula (sama dengan logika lama frontend):
- * - Per transaksi: halfCost = max(10000, ceil(distanceKm * 3000 / 2)),
- *   cost_delivery = max(10000, ceil(halfCost / 1000) * 1000)
+ * Formula (sama dengan tombol sync biaya sharing di halaman route CMS):
  * - Total route (upah driver) = max(10000, ceil(totalDistanceKm * 3000 / 1000) * 1000)
+ * - Biaya asli per transaksi = max(10000, ceil(distanceKm * 3) * 1000)
+ * - cost_delivery = ceil(total / sum(biaya asli) * biaya asli / 1000) * 1000,
+ *   minimal setengah biaya asli; kalau cuma 1 transaksi = biaya asli
  *
  * Efek samping:
  * - Update `cost_delivery` di tabel transactions
@@ -41,13 +52,14 @@ export async function computeDeliveryCost(
   //    (route 1 matches 1.1, 1.2, ... — floor() comparison)
   const { data: transactions, error: txError } = await (supabase
     .from('transactions')
-    .select('id, customer_id, route, cost_delivery, customer_geo, customer_address')
+    .select('id, customer_id, route, cost_delivery, customer_distances, customer_geo, customer_address')
     .eq('date', date)) as {
     data: Array<{
       id: number;
       customer_id: number | null;
       route: number | null;
       cost_delivery: number | null;
+      customer_distances: number | null;
       customer_geo: string | { lat: number; lng: number } | null;
       customer_address: string | null;
     }>;
@@ -157,43 +169,48 @@ export async function computeDeliveryCost(
     totalRouteDistanceKm = sequentialTotalKm;
   }
 
-  const items: DeliveryCostItem[] = [];
+  // 4. Totals for the route: total cost = total distance (jarak berurutan toko→stop1→stop2→...) × 3000
+  const totalDistanceKm = totalRouteDistanceKm;
+  const totalCost = Math.max(10000, Math.ceil((totalDistanceKm * 3000) / 1000) * 1000);
 
-  for (const tx of routeTx) {
-    if (!tx.customer_id) continue;
-    if (!distanceKmByTransaction.has(tx.id)) continue;
-    const distanceKm = distanceKmByTransaction.get(tx.id) ?? 0;
-
-    // 4. Sharing ongkir per transaksi
-    const halfCost = Math.max(10000, Math.ceil((distanceKm * 3000) / 2));
-    const costDelivery = Math.max(10000, Math.ceil(halfCost / 1000) * 1000);
-
-    items.push({
-      transaction_id: tx.id,
-      customer_id: tx.customer_id,
-      distance_km: parseFloat(distanceKm.toFixed(2)),
-      cost_delivery: costDelivery,
+  const stopsWithCost = routeTx
+    .filter((tx) => tx.customer_id && distanceKmByTransaction.has(tx.id))
+    .map((tx) => {
+      const radialKm = distanceKmByTransaction.get(tx.id) ?? 0;
+      // jarak asli = snapshot transaksi (sama dengan yang tampil di CMS), fallback ke Mapbox
+      const snapshotKm = Number(tx.customer_distances);
+      const distanceKm = Number.isFinite(snapshotKm) && snapshotKm > 0 ? snapshotKm : radialKm;
+      return { tx, distanceKm, originalCost: originalDeliveryCost(distanceKm) };
     });
-  }
 
-  if (items.length === 0) {
+  if (stopsWithCost.length === 0) {
     throw new Error('Customer has no address');
   }
 
-  // 5. Update cost_delivery on all transactions in a single batched request
-  //    (per-row updates blow past the Workers subrequest limit on large routes)
+  // 5. Sharing ongkir per transaksi: total rute dibagi proporsional terhadap biaya asli
+  const totalOriginalCost = stopsWithCost.reduce((sum, stop) => sum + stop.originalCost, 0);
+  const items: DeliveryCostItem[] = stopsWithCost.map(({ tx, distanceKm, originalCost }) => ({
+    transaction_id: tx.id,
+    customer_id: tx.customer_id as number,
+    distance_km: parseFloat(distanceKm.toFixed(2)),
+    cost_delivery:
+      stopsWithCost.length === 1
+        ? originalCost
+        : sharingDeliveryCost(originalCost, totalCost, totalOriginalCost),
+  }));
+
+  // 6. Update cost_delivery on all transactions in a single batched request
+  //    (per-row updates blow past the Workers subrequest limit on large routes).
+  //    `date` wajib ikut: upsert = INSERT ... ON CONFLICT, NOT NULL dicek sebelum conflict.
   const { error: updErr } = await (supabase
     .from('transactions')
-    .upsert(items.map((i) => ({ id: i.transaction_id, cost_delivery: i.cost_delivery })))) as {
+    .upsert(items.map((i) => ({ id: i.transaction_id, date, cost_delivery: i.cost_delivery })))) as {
     error: any;
   };
   if (updErr) {
     console.error('Error batch-updating cost_delivery:', updErr);
+    throw new Error(`Gagal menyimpan biaya sharing: ${updErr.message}`);
   }
-
-  // 6. Totals for the route: total cost = total distance (jarak berurutan toko→stop1→stop2→...) × 3000
-  const totalDistanceKm = totalRouteDistanceKm;
-  const totalCost = Math.max(10000, Math.ceil((totalDistanceKm * 3000) / 1000) * 1000);
 
   // 7. Upsert transaction_deliveries record (UNIQUE on (date, parent))
   const routeName = `ROUTE ${route}`;
