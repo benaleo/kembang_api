@@ -135,6 +135,8 @@ function formatTransactionIndex(transaction: any) {
       id: tp.id,
       product_id: tp.product_id,
       product: tp.product?.name || 'Unknown Product',
+      code: tp.product?.code || '',
+      category: tp.product?.category || null,
       price: tp.product?.price || 0,
       qty: tp.qty || 0,
       parent_id: tp.parent_id || null,
@@ -178,7 +180,7 @@ adminTransactions.openapi(
         .select(
           `id, date, invoice, customer_id, customer_name, customer_phone, customer_address, customer_address_detail, customer_place, customer_geo, customer_distances, name_alter, note, note_route, delivery_time_slot, delivery_time_manual, route, cost_delivery, cost_order, billed_at, template_id, created_at, updated_at, is_web_order, status,
           customer:customers (name, address, address_note, distance, phone, place),
-          transaction_products (id, product_id, qty, parent_id, is_free, product:products (id, name, price))`,
+          transaction_products (id, product_id, qty, parent_id, is_free, product:products (id, name, price, code, category))`,
           { count: 'exact' },
         )
         .range(from, to);
