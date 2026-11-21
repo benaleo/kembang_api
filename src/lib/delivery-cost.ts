@@ -217,7 +217,7 @@ export async function computeDeliveryCost(
   const upsertData = {
     name: routeName,
     driver_name: routeName,
-    time: '',
+    time: '00:00',
     date,
     parent: route,
     distances: Math.max(1, roundToOneDecimal(totalDistanceKm)),
@@ -226,14 +226,16 @@ export async function computeDeliveryCost(
 
   const { data: existing } = await (supabase
     .from('transaction_deliveries')
-    .select('id')
+    .select('id, time')
     .eq('date', date)
-    .eq('parent', route)) as { data: Array<{ id: number }> };
+    .eq('parent', route)) as { data: Array<{ id: number; time: string | null }> };
 
   if (existing && existing.length > 0) {
+    const existingTime = (existing[0].time ?? '').trim();
+    const { time: _defaultTime, ...rest } = upsertData;
     const { error: updErr } = await (supabase
       .from('transaction_deliveries')
-      .update(upsertData)
+      .update({ ...rest, time: existingTime || '00:00' })
       .eq('date', date)
       .eq('parent', route)) as { error: any };
     if (updErr) throw new Error(updErr.message);
